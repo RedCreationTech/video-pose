@@ -12,8 +12,8 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from .frames import DecodedFrame
-from .violation_review import ReviewStatus
 from .video_replay import SynchronizedFrameSet
+from .violation_review import ReviewStatus
 
 
 def _utc_now() -> str:
