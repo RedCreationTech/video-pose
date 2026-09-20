@@ -1,0 +1,95 @@
+#+TITLE: Video Pose Persistent Camera Hub
+#+SUBTITLE: Camera Lifetime Decoupled from Operation Session Lifetime
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 问题
+
+旧 Managed Session:
+
+#+BEGIN_SRC text
+start session
+ -> connect 4 cameras
+ -> load AI
+ -> run
+ -> stop session
+ -> disconnect 4 cameras
+#+END_SRC
+
+连续作业之间会产生 RTSP 重连空窗.
+
+* 2. 新架构
+
+#+BEGIN_SRC text
+Service Lifetime
+  |
+PersistentCameraHub
+  |  four cameras remain connected
+  |
+  +---- SynchronizedFrameSet publisher
+           |
+           +--> Session 001 AnalysisRuntime
+           |
+           +--> Session 002 AnalysisRuntime
+#+END_SRC
+
+当前 Controller 仍限制同一工位一次只有一个 RUNNING Session, 但摄像头生命周期已经独立.
+
+* 3. Hub
+
+PersistentCameraHub 持有:
+
+- manifest.
+- MemoryFrameStore.
+- LiveFrameSynchronizer.
+- ThreadedLiveGateway.
+- camera/runtime health.
+- subscriber registry.
+
+=start()= 是幂等的.
+
+订阅者只接收订阅之后的新 FrameSet, 不回放历史帧.
+
+* 4. SessionAnalysisRuntime
+
+每个 Session 独立持有:
+
+- AI pipeline.
+- Action recognizers.
+- RealtimeRuleSession.
+- bounded inference queue.
+
+=start()= 只 subscribe Hub.
+
+=stop()= 只 unsubscribe Hub 并完成规则 Session.
+
+不会调用 camera gateway stop.
+
+* 5. Managed Service
+
+=video-pose-serve= 默认采用 PersistentCameraHub.
+
+FastAPI lifespan:
+
+1. 启动 Hub.
+2. 等待 Session API.
+3. Session start/stop 不动摄像头.
+4. 服务退出时 shutdown Hub.
+
+因此 =/health/ready= 在没有作业 Session 时也能反映摄像头健康.
+
+* 6. 当前边界
+
+当前 AI 模型仍在每个 Session 创建一次.
+
+下一阶段可进一步拆分:
+
+#+BEGIN_SRC text
+Persistent Capture
+  |
+Persistent Perception Models
+  |
+Session-scoped Action/Rule Context
+#+END_SRC
+
+这样 Session 切换时连模型也无需重新加载.

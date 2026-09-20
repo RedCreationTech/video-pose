@@ -7,10 +7,7 @@ from typing import Any
 
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
-from .session_controller import (
-    LiveSessionController,
-    SessionStartRequest,
-)
+from .session_controller import SessionStartRequest
 
 
 def create_live_app(
@@ -60,7 +57,7 @@ def create_live_app(
 
 
 def create_managed_live_app(
-    controller: LiveSessionController,
+    controller: Any,
     *,
     broker: LiveEventBroker | None = None,
     autostart: bool = False,
@@ -85,14 +82,21 @@ def create_managed_live_app(
 
     @asynccontextmanager
     async def lifespan(_app: Any) -> AsyncIterator[None]:
+        start_hub = getattr(controller, "start_hub", None)
+        shutdown = getattr(controller, "shutdown", None)
+        if callable(start_hub):
+            start_hub()
         if autostart:
             controller.start()
         try:
             yield
         finally:
-            current = controller.current()
-            if current is not None and current.status == "RUNNING":
-                controller.abort(current.session_id)
+            if callable(shutdown):
+                shutdown()
+            else:
+                current = controller.current()
+                if current is not None and current.status == "RUNNING":
+                    controller.abort(current.session_id)
 
     app = FastAPI(
         title="Video Pose Managed Live API",

@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 
 from .live_service import create_managed_live_app
+from .persistent_camera import build_persistent_camera_hub
+from .persistent_session_controller import PersistentLiveSessionController
 from .resilient_store import ResilientSessionStore
 from .runtime_config import load_analysis_config
-from .session_controller import LiveSessionController
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +32,7 @@ def main() -> int:
             "video-pose-serve requires the optional 'api' dependencies"
         ) from exc
 
+    loaded = load_analysis_config(args.config)
     repository = None
     if args.database_url:
         try:
@@ -43,8 +45,13 @@ def main() -> int:
             SQLAlchemySessionRepository(args.database_url)
         )
 
-    controller = LiveSessionController(
-        load_analysis_config(args.config),
+    hub = build_persistent_camera_hub(
+        loaded,
+        processing_queue_size=args.queue_size,
+    )
+    controller = PersistentLiveSessionController(
+        loaded,
+        hub=hub,
         audit_root=args.audit_dir,
         processing_queue_size=args.queue_size,
         repository=repository,
