@@ -9,10 +9,12 @@ from .baseline_action import PickPlaceActionRecognizer
 from .calibration import load_planar_calibration
 from .perception import MultiViewPerceptionAdapter
 from .perception_v1 import PerceptionV1Model
+from .perspective import load_perspective_calibration
 from .pipeline import VideoPosePipeline
 from .relations import HumanObjectRelationBuilder
 from .rules import RuleEngine
 from .runtime_config import LoadedAnalysisConfig
+from .triangulation import TriangulationProcessor
 from .video_replay import ReplayPlanner
 from .world_identity import MultiViewIdentityProcessor
 from .world_projection import WorldProjectionProcessor
@@ -84,6 +86,22 @@ def build_offline_runtime(config: LoadedAnalysisConfig) -> OfflineAnalysisRuntim
                     max_missed=cfg.identity.max_missed,
                 )
             )
+
+    if (
+        cfg.triangulation.enabled
+        and cfg.triangulation.calibration is not None
+    ):
+        perspective = load_perspective_calibration(
+            config.resolve(cfg.triangulation.calibration)
+        )
+        processors.append(
+            TriangulationProcessor(
+                perspective,
+                max_reprojection_rmse=(
+                    cfg.triangulation.max_reprojection_rmse
+                ),
+            )
+        )
 
     enrichers = []
     if cfg.zones is not None:

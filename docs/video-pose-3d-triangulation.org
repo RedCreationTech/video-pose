@@ -1,0 +1,70 @@
+#+TITLE: Video Pose 3D Triangulation
+#+SUBTITLE: Projection Matrix, DLT-style Least Squares and Reprojection Gate
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 分层策略
+
+平面 Homography 继续负责:
+
+- 快速工位标定.
+- 世界 XY.
+- 跨视角身份初始关联.
+
+完整 3D Triangulation 负责:
+
+- wrist/elbow/tool 真实 XYZ.
+- 离开工作台平面的动作.
+- 高度和轨迹分析.
+
+* 2. Projection Matrix
+
+每个相机使用 3x4 projection matrix:
+
+#+BEGIN_SRC text
+p = P * X
+#+END_SRC
+
+其中 =P= 已包含相机内参和外参.
+
+* 3. Triangulation
+
+对于同一个 =world-* entity_id= 在至少两个相机中的 2D 观测, 建立线性方程并做最小二乘求解 XYZ.
+
+输出同时计算 reprojection RMSE.
+
+* 4. Quality Gate
+
+只有:
+
+#+BEGIN_SRC text
+reprojection_rmse <= max_reprojection_rmse
+#+END_SRC
+
+才覆盖 Observation.point_3d.
+
+否则保留原有平面坐标/未知状态, 避免把差的 3D 解当成事实.
+
+* 5. Pipeline 顺序
+
+#+BEGIN_SRC text
+Perception
+  |
+Planar Projection
+  |
+Multi-view Identity
+  |
+Triangulation
+  |
+Relations
+  |
+Action
+#+END_SRC
+
+* 6. 下一步
+
+- 相机内参/畸变标定 CLI.
+- projection matrix 自动生成.
+- epipolar consistency.
+- robust triangulation / RANSAC.
+- calibration health monitor.

@@ -1,0 +1,14 @@
+profile_id: perspective-demo
+version: 1
+cameras:
+  - camera_id: cam-front
+    projection:
+      - [1.0, 0.0, 0.0, 0.0]
+      - [0.0, 1.0, 0.0, 0.0]
+      - [0.0, 0.0, 1.0, 0.0]
+
+  - camera_id: cam-left
+    projection:
+      - [1.0, 0.0, 0.0, -1.0]
+      - [0.0, 1.0, 0.0, 0.0]
+      - [0.0, 0.0, 1.0, 0.0]

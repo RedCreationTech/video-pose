@@ -38,6 +38,12 @@ class IdentityRuntimeConfig(BaseModel):
     max_missed: int = Field(default=10, ge=0)
 
 
+class TriangulationRuntimeConfig(BaseModel):
+    enabled: bool = False
+    calibration: str | None = None
+    max_reprojection_rmse: float = Field(default=5.0, gt=0.0)
+
+
 class OfflineAnalysisConfig(BaseModel):
     manifest: str
     rules: str
@@ -47,6 +53,9 @@ class OfflineAnalysisConfig(BaseModel):
     pose: PoseRuntimeConfig | None = None
     relation: RelationRuntimeConfig = Field(default_factory=RelationRuntimeConfig)
     identity: IdentityRuntimeConfig = Field(default_factory=IdentityRuntimeConfig)
+    triangulation: TriangulationRuntimeConfig = Field(
+        default_factory=TriangulationRuntimeConfig
+    )
     action_min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
 
 
