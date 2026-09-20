@@ -1,0 +1,29 @@
+version: 1
+name: perception-v1
+
+detector:
+  backend: ultralytics
+  weights: models/weights/tools-best.pt
+  confidence: 0.40
+  person_confidence: 0.50
+  classes:
+    - person
+    - torque_wrench
+    - open_end_wrench
+    - component_A
+
+pose:
+  backend: mmpose
+  model_family: RTMPose
+  config: configs/rtmpose-body.py
+  checkpoint: models/weights/rtmpose-body.pth
+  device: cuda:0
+
+tracking:
+  backend: iou-baseline
+  iou_threshold: 0.35
+  max_missed: 8
+
+notes:
+  - detector weights are project-specific and are not committed to Git
+  - MMPose/MMCV must match the installed PyTorch and CUDA environment

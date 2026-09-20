@@ -3,92 +3,88 @@
 
 * 当前阶段
 
-当前代码已经形成可替换模型的视频分析骨架:
+系统已经具备 Perception Service V1 的模型接入骨架:
 
 #+BEGIN_SRC text
-4-View Video Timeline
+4-View Video
    |
-ReplayPlanner
+ReplayPlanner / FrameLoader
    |
-Synchronized FrameSet
+YOLO Detector Adapter
    |
-FrameLoader
+Person + Tool Detection
    |
-CameraPerceptionModel
+Operator IoU Tracking
+   |
+RTMPose Top-down Adapter
    |
 Observation
    |
-Semantic Fusion
+Multi-view Fusion
    |
-Explainable Action Baseline
-   |
-ActionEvent
+Action Recognition
    |
 Rule Engine
    |
-Step State + Violation
+Violation / Score
 #+END_SRC
 
-=FrameLoader= 与 =CameraPerceptionModel= 分离. 因此同一个模型后续可以复用在
-离线 MP4, 本地录像和实时视频源上.
+核心业务不直接依赖 Ultralytics 或 MMPose. 模型层通过 adapter 输出
+=Detection / PoseEstimate / Observation=.
 
-* 快速开始
+* 安装
+
+核心开发:
 
 #+BEGIN_SRC sh
-python -m venv .venv
-source .venv/bin/activate
 pip install -e '.[dev]'
+#+END_SRC
+
+离线视频 + YOLO:
+
+#+BEGIN_SRC sh
+pip install -e '.[dev,video,yolo]'
+#+END_SRC
+
+MMPose:
+
+#+BEGIN_SRC sh
+pip install -e '.[mmpose]'
+#+END_SRC
+
+MMPose/MMCV/PyTorch/CUDA 的版本必须按照目标 GPU 环境固定, 生产部署不建议
+依赖 pip 自动猜测 CUDA 组合.
+
+* 测试
+
+#+BEGIN_SRC sh
 pytest
-video-pose-replay \
-  --events fixtures/replay/wrong-tool.jsonl \
-  --rules fixtures/rules/assembly-a.yaml
+ruff check src tests
 #+END_SRC
 
-* 四路录像 Replay
+GitHub Actions 在 main 上执行 Install, Lint, Test 和 Replay smoke test.
 
-=ReplayPlanner= 使用 ffprobe 获取真实帧时间戳, 应用每个摄像头的时钟修正值,
-然后根据 =sync_tolerance_ms= 生成四路同步 FrameSet.
+* 模型配置
 
-#+BEGIN_SRC python
-from video_pose.video_replay import ReplayPlanner
+第一版 manifest:
 
-planner = ReplayPlanner.from_manifest_file(
-    "fixtures/replay/session-manifest.yaml"
-)
-frame_sets = planner.plan()
+#+BEGIN_SRC text
+models/manifests/perception-v1.yaml
 #+END_SRC
 
-Manifest 中的 =clock_offset_ms= 定义为需要加到源时间戳上的校正量.
+模型权重不提交 Git.
 
-* 模型适配边界
+* 当前边界
 
-核心模型接口:
+已完成:
 
-#+BEGIN_SRC python
-class CameraPerceptionModel:
-    def infer(self, frame, *, session_id):
-        ...
-#+END_SRC
+- 四路帧时间同步.
+- 视频取帧接口.
+- YOLO 检测适配器.
+- 单工位操作员 tracking.
+- RTMPose top-down 适配器.
+- Person/Object/Body keypoint Observation.
+- Observation -> ActionEvent -> Rule Engine.
 
-模型输出统一为 =Observation=. =MultiViewPerceptionAdapter= 负责四路调用和
-契约校验.
-
-离线 MP4 已提供可选的 =OpenCVFileFrameLoader=. 该模块使用惰性 import,
-因此核心规则和 Replay 测试无需安装 OpenCV. 实时 RTSP/GStreamer Loader
-将在 Video Gateway 阶段实现.
-
-* Observation Replay
-
-#+BEGIN_SRC python
-from video_pose.observation_replay import run_observation_replay
-
-result = run_observation_replay(
-    "fixtures/observations/pick-place-compliant.jsonl",
-    "fixtures/rules/pick-place.yaml",
-)
-print(result.model_dump_json(indent=2))
-#+END_SRC
-
-* 文档
-
-详细 C4 与技术设计见 =docs/=.
+下一关键节点是 Human-Object Relation Builder, 将手腕/手部关键点与工具轨迹结合,
+稳定生成 =NEAR / HELD_BY / TOUCHING=, 从而让真实视频直接驱动 PICK/PLACE.
