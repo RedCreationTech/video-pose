@@ -7,6 +7,7 @@ from typing import Any
 
 from .camera_preview import EncodedSnapshot, encode_jpeg
 from .live_capture_factory import build_live_camera_factory
+from .async_evidence import AsyncLiveEvidenceRecorder
 from .live_evidence import LiveEvidenceBuffer, OpenCVJPEGEncoder
 from .live_gateway import ThreadedLiveGateway
 from .live_health import LiveHealthRegistry, LiveHealthSnapshot
@@ -26,7 +27,7 @@ class PersistentCameraHub:
         frame_store: MemoryFrameStore,
         health: LiveHealthRegistry,
         gateway: ThreadedLiveGateway,
-        evidence: LiveEvidenceBuffer | None = None,
+        evidence: AsyncLiveEvidenceRecorder | None = None,
     ) -> None:
         self.manifest = manifest
         self.frame_store = frame_store
@@ -52,8 +53,12 @@ class PersistentCameraHub:
                 return
             self._running = True
         try:
+            if self.evidence is not None:
+                self.evidence.start()
             self.gateway.start(self._publish)
         except Exception:
+            if self.evidence is not None:
+                self.evidence.stop()
             with self._lock:
                 self._running = False
             raise
@@ -65,7 +70,7 @@ class PersistentCameraHub:
             self._running = False
         self.gateway.stop()
         if self.evidence is not None:
-            self.evidence.flush_pending()
+            self.evidence.stop()
 
     def subscribe(
         self,
@@ -221,7 +226,7 @@ class PersistentCameraHub:
         self.health.frame_set_received()
         if self.evidence is not None:
             try:
-                self.evidence.ingest(frame_set, self.frame_store)
+                self.evidence.submit(frame_set, self.frame_store)
             except Exception:
                 self.health.processing_error()
         with self._lock:
@@ -265,20 +270,23 @@ def build_persistent_camera_hub(
     )
     evidence = None
     if config.config.evidence.enabled:
-        evidence = LiveEvidenceBuffer(
-            root=config.resolve(config.config.evidence.root),
-            encoder=OpenCVJPEGEncoder(
-                quality=config.config.evidence.jpeg_quality
+        evidence = AsyncLiveEvidenceRecorder(
+            LiveEvidenceBuffer(
+                root=config.resolve(config.config.evidence.root),
+                encoder=OpenCVJPEGEncoder(
+                    quality=config.config.evidence.jpeg_quality
+                ),
+                camera_ids=[
+                    camera.camera_id
+                    for camera in manifest.cameras
+                    if camera.enabled
+                ],
+                pre_roll_ms=config.config.evidence.pre_roll_ms,
+                post_roll_ms=config.config.evidence.post_roll_ms,
+                sample_interval_ms=config.config.evidence.sample_interval_ms,
+                max_pending=config.config.evidence.max_pending,
             ),
-            camera_ids=[
-                camera.camera_id
-                for camera in manifest.cameras
-                if camera.enabled
-            ],
-            pre_roll_ms=config.config.evidence.pre_roll_ms,
-            post_roll_ms=config.config.evidence.post_roll_ms,
-            sample_interval_ms=config.config.evidence.sample_interval_ms,
-            max_pending=config.config.evidence.max_pending,
+            queue_size=config.config.evidence.worker_queue_size,
         )
     return PersistentCameraHub(
         manifest=manifest,

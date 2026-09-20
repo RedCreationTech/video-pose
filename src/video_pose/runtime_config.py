@@ -81,6 +81,7 @@ class EvidenceRuntimeConfig(BaseModel):
     sample_interval_ms: int = Field(default=200, ge=1)
     jpeg_quality: int = Field(default=70, ge=1, le=100)
     max_pending: int = Field(default=32, ge=1)
+    worker_queue_size: int = Field(default=2, ge=1)
 
 
 class OfflineAnalysisConfig(BaseModel):

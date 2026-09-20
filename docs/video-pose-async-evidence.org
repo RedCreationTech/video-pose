@@ -1,0 +1,43 @@
+#+TITLE: Video Pose Async Evidence Worker
+#+SUBTITLE: 将 JPEG 编码与证据 I/O 从 Camera Capture Thread 解耦
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. 目标
+
+Camera capture 不执行 JPEG 编码和磁盘写入.
+
+#+BEGIN_SRC text
+Camera Hub
+  |
+capture raw frame references
+  |
+bounded evidence queue
+  |
+Evidence Worker
+  |
+JPEG encode + rolling buffer + manifest I/O
+#+END_SRC
+
+* 2. Backpressure
+
+默认 evidence queue size = 2.
+
+队列满时 drop-oldest, 保留最新 frame set. 证据采样本身默认只有约 5 FPS, 因此 drop-oldest 不会让采集线程积压.
+
+* 3. 内存
+
+队列中只保留少量 NumPy image 引用. 原始 FrameStore 默认 64 帧, 历史证据长期缓冲使用 JPEG 压缩内容.
+
+* 4. 指标
+
+Evidence Worker 暴露:
+
+- submitted_total.
+- processed_total.
+- dropped_total.
+- errors_total.
+- queue_depth.
+- queue_capacity.
+
+后续可接入 Prometheus.
