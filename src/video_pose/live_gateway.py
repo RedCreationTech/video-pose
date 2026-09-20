@@ -3,8 +3,10 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
+from .live_health import LiveHealthRegistry
 from .live_video import LiveFrameSynchronizer
 from .video_manifest import ReplayManifest
 from .video_replay import SynchronizedFrameSet
@@ -54,8 +56,15 @@ class OpenCVLiveCamera:
             self._capture = None
 
 
+@dataclass(frozen=True, slots=True)
+class ReconnectPolicy:
+    initial_delay_s: float = 0.2
+    max_delay_s: float = 5.0
+    multiplier: float = 2.0
+
+
 class ThreadedLiveGateway:
-    """Read enabled cameras concurrently and emit synchronized frame sets."""
+    """Read cameras concurrently with reconnect and health accounting."""
 
     def __init__(
         self,
@@ -63,10 +72,20 @@ class ThreadedLiveGateway:
         synchronizer: LiveFrameSynchronizer,
         *,
         camera_factory: Callable[[str, str], OpenCVLiveCamera] | None = None,
+        health: LiveHealthRegistry | None = None,
+        reconnect_policy: ReconnectPolicy | None = None,
     ) -> None:
         self.manifest = manifest
         self.synchronizer = synchronizer
         self.camera_factory = camera_factory or OpenCVLiveCamera
+        self.health = health or LiveHealthRegistry(
+            [
+                camera.camera_id
+                for camera in manifest.cameras
+                if camera.enabled
+            ]
+        )
+        self.reconnect_policy = reconnect_policy or ReconnectPolicy()
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self._cameras: list[OpenCVLiveCamera] = []
@@ -85,8 +104,8 @@ class ThreadedLiveGateway:
             if not config.enabled:
                 continue
             camera = self.camera_factory(config.camera_id, config.uri)
-            camera.open()
             self._cameras.append(camera)
+            self.health.camera_starting(config.camera_id)
             thread = threading.Thread(
                 target=self._run_camera,
                 args=(camera,),
@@ -99,16 +118,23 @@ class ThreadedLiveGateway:
     def stop(self) -> None:
         self._stop.set()
         for thread in self._threads:
-            thread.join(timeout=2.0)
+            thread.join(timeout=3.0)
         for camera in self._cameras:
             camera.close()
+            self.health.camera_stopped(camera.camera_id)
         self._threads.clear()
         self._cameras.clear()
 
     def _run_camera(self, camera: OpenCVLiveCamera) -> None:
+        delay = self.reconnect_policy.initial_delay_s
         while not self._stop.is_set():
             try:
                 timestamp_ms, image = camera.read()
+                self.health.camera_frame(
+                    camera.camera_id,
+                    monotonic_ms=timestamp_ms,
+                )
+                delay = self.reconnect_policy.initial_delay_s
                 frame_set = self.synchronizer.push(
                     camera_id=camera.camera_id,
                     source_timestamp_ms=timestamp_ms,
@@ -116,8 +142,14 @@ class ThreadedLiveGateway:
                 )
                 if frame_set is not None and self._callback is not None:
                     self._callback(frame_set)
-            except Exception:
+            except Exception as exc:
+                self.health.camera_error(camera.camera_id, exc)
                 camera.close()
                 if self._stop.is_set():
                     return
-                time.sleep(0.1)
+                self.health.camera_reconnecting(camera.camera_id)
+                self._stop.wait(delay)
+                delay = min(
+                    self.reconnect_policy.max_delay_s,
+                    delay * self.reconnect_policy.multiplier,
+                )

@@ -1,0 +1,101 @@
+#+TITLE: Video Pose Live Stability Design
+#+SUBTITLE: Capture Health, Reconnect, Backpressure and Metrics
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 设计目标
+
+实时采集线程不能被 AI 推理延迟拖死.
+
+#+BEGIN_SRC text
+Camera Threads
+    |
+LiveFrameSynchronizer
+    |
+bounded queue
+    |
+Inference Worker
+    |
+Realtime Rule Session
+#+END_SRC
+
+* 2. Backpressure
+
+默认 processing queue size = 2.
+
+队列满时:
+
+#+BEGIN_SRC text
+drop oldest
+keep newest
+#+END_SRC
+
+原因:
+
+动作规范检测更关心接近实时的最新状态, 不应让系统积累几十秒历史帧造成延迟雪崩.
+
+* 3. 摄像头状态
+
+状态:
+
+- STARTING.
+- ONLINE.
+- DEGRADED.
+- RECONNECTING.
+- STOPPED.
+- FAILED.
+
+记录:
+
+- frames_total.
+- read_errors_total.
+- reconnect_total.
+- consecutive_errors.
+- FPS estimate.
+- last error.
+
+* 4. 自动重连
+
+读取失败后:
+
+1. 标记 DEGRADED.
+2. close capture.
+3. 标记 RECONNECTING.
+4. 指数退避.
+5. 下一次循环重新 open.
+
+默认退避:
+
+#+BEGIN_SRC text
+0.2s -> 0.4s -> 0.8s -> ... -> 5s
+#+END_SRC
+
+成功读取一帧后退避恢复为初始值.
+
+* 5. Prometheus 指标
+
+=render_prometheus= 输出:
+
+- video_pose_ready.
+- camera frames/errors/reconnect/fps.
+- frame sets received/processed/dropped.
+- processing queue depth.
+- processing latency.
+- processing errors.
+
+下一阶段可由 HTTP =/metrics= 暴露.
+
+* 6. 72h 稳定性关注
+
+至少持续记录:
+
+- RSS memory.
+- GPU memory.
+- camera reconnect.
+- dropped frame set ratio.
+- P95/P99 processing latency.
+- inference error.
+- queue depth.
+- evidence write failure.
+
+正式现场 Gate 建议要求 72 小时无不可恢复中断.
