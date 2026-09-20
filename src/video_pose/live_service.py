@@ -17,7 +17,7 @@ def create_live_app(
     broker: LiveEventBroker | None = None,
 ) -> Any:
     try:
-        from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+        from fastapi import FastAPI, Response, WebSocketDisconnect
         from fastapi.responses import JSONResponse
     except ImportError as exc:
         raise RuntimeError(
@@ -68,7 +68,6 @@ def create_managed_live_app(
             HTTPException,
             Query,
             Response,
-            WebSocket,
             WebSocketDisconnect,
         )
         from fastapi.responses import JSONResponse
