@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..detections import TrackedDetection
 from ..pose import COCO_KEYPOINT_NAMES, PoseEstimate, PoseKeypoint

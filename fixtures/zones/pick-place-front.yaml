@@ -1,0 +1,16 @@
+zones:
+  - name: component_bin_A
+    camera_id: cam-front
+    x1: 0
+    y1: 0
+    x2: 200
+    y2: 300
+    object_classes: [component_A]
+
+  - name: assembly_zone
+    camera_id: cam-front
+    x1: 500
+    y1: 0
+    x2: 800
+    y2: 300
+    object_classes: [component_A]

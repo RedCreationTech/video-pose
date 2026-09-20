@@ -1,29 +1,35 @@
 #+TITLE: Video Pose Perception Service V1
-#+SUBTITLE: YOLO, Operator Tracking and RTMPose Adapter Design
+#+SUBTITLE: YOLO, Tracking, RTMPose and Human-Object Relations
 #+AUTHOR: RedCreationTech
 #+DATE: 2026-09-20
 #+OPTIONS: toc:3 num:t
 
 * 1. 目标
 
-Perception Service V1 将单路图像转换为标准 Observation.
+Perception Service V1 将图像转换为可以驱动动作规则的 Observation.
 
 #+BEGIN_SRC text
 DecodedFrame
    |
 YOLO Detector
    |
-+-- Person ----------------> IoU Tracker
-|                              |
-|                              +--> PERSON Observation
-|
-+-- Tool / Part -------------> OBJECT Observation
-|
-Tracked Person BBox
+Person / Tool / Part
+   |
+IoU Tracking
    |
 RTMPose
    |
-BODY_KEYPOINT Observation
+Person/Object/Keypoint Observation
+   |
+Human-Object Relation Builder
+   |
+NEAR / HELD_BY / FREE
+   |
+Zone Relation Builder
+   |
+IN zone
+   |
+ActionEvent
 #+END_SRC
 
 * 2. C4 Component
@@ -33,141 +39,118 @@ C02 Perception Service
 
 P01 Frame Input
 P02 Object Detector Adapter
-P03 Operator Tracker
+P03 Person/Object Tracker
 P04 Pose Estimator Adapter
 P05 Observation Normalizer
+P06 Human-Object Relation Builder
+P07 Image-Space Zone Builder
 #+END_SRC
 
-具体模型被限制在 Adapter 内.
+* 3. Detector 与 Pose Adapter
 
-* 3. Detector Adapter
+YOLO adapter 使用稳定的 Results.boxes 接口.
 
-默认适配 Ultralytics YOLO.
+RTMPose adapter 使用 MMPose 1.x 的 =init_model + inference_topdown=.
 
-使用公开的 Results API:
+模型权重和具体版本不进入业务层.
 
-- boxes.xyxy.
-- boxes.conf.
-- boxes.cls.
-- result.names.
+* 4. Object Tracking
 
-项目训练出的工具检测模型通过 =weights= 注入.
+工具和工件现在与人员一样拥有跨帧 entity_id.
 
-第一阶段类别建议:
-
-- person.
-- torque_wrench.
-- open_end_wrench.
-- component_A.
-- 真实项目所需关键工具和工件.
-
-* 4. Operator Tracking
-
-MVP 使用 IoU Tracker, 目标不是解决复杂多人 ReID, 而是稳定单工位操作员身份.
-
-后续接口可替换为:
-
-- ByteTrack.
-- BoT-SORT.
-- ReID tracker.
-
-上层保持 =TrackedDetection= 不变.
-
-* 5. Pose Adapter
-
-MMPose 1.x 使用:
-
-#+BEGIN_SRC python
-from mmpose.apis import init_model, inference_topdown
-#+END_SRC
-
-流程:
+MVP 使用 IoU tracking.
 
 #+BEGIN_SRC text
-Tracked Person BBox
-       |
-inference_topdown
-       |
-PoseDataSample.pred_instances
-       |
-keypoints + keypoint_scores
-       |
-BODY_KEYPOINT Observation
+frame n:
+cam-front-object-0001
+
+frame n+1:
+cam-front-object-0001
 #+END_SRC
 
-默认使用 COCO 17 点名称.
-
-对于手部操作场景, 后续增加 Hand Pose Adapter, 不应强行把手指关键点混入 COCO Body Pose.
-
-* 6. 依赖策略
-
-核心包不强制依赖 AI 框架.
-
-#+BEGIN_SRC sh
-pip install -e '.[yolo,video]'
-#+END_SRC
-
-MMPose 环境需要根据 PyTorch/CUDA 选择兼容 MMCV, 因此生产镜像应固定完整版本矩阵.
-
-* 7. Observation 输出
-
-Person:
-
-#+BEGIN_SRC json
-{
-  "type": "PERSON",
-  "entity_id": "cam-front-person-0001",
-  "confidence": 0.96,
-  "bbox": {
-    "x1": 100,
-    "y1": 50,
-    "x2": 500,
-    "y2": 900
-  }
-}
-#+END_SRC
-
-Pose:
-
-#+BEGIN_SRC json
-{
-  "type": "BODY_KEYPOINT",
-  "entity_id": "cam-front-person-0001:right_wrist",
-  "entity_class": "right_wrist",
-  "confidence": 0.91,
-  "point_2d": {
-    "x": 412.2,
-    "y": 380.7
-  },
-  "attributes": {
-    "person_id": "cam-front-person-0001"
-  }
-}
-#+END_SRC
-
-* 8. 已知边界
-
-当前对象 entity_id 是 frame-local, 工具的跨帧 tracking 尚未实现.
-
-因此当前阶段已经可以:
-
-- 人员稳定跟踪.
-- 人体关键点时序.
-- 工具类别检测.
-
-但还不能仅靠 Detector 自动形成可靠 =HELD_BY= 关系.
-
-下一阶段需要增加 Human-Object Relation Builder:
+这使系统能够建立:
 
 #+BEGIN_SRC text
-hand keypoint
-+
-tool bbox
-+
-temporal stability
-+
-optional hand pose
-      |
-      v
-HELD_BY / NEAR / TOUCHING
+FREE
+  |
+HELD_BY
+  |
+FREE
 #+END_SRC
+
+并转换为 PICK / PLACE.
+
+* 5. Human-Object Relation Builder
+
+输入:
+
+- OBJECT bbox.
+- left_wrist/right_wrist keypoint.
+- confidence.
+- temporal history.
+
+输出:
+
+- NEAR.
+- HELD_BY.
+- FREE.
+
+当前 baseline 使用 wrist 到 object bbox 的距离并进行连续帧 debounce.
+
+它不是最终 HOI 模型, 但提供两个重要价值:
+
+1. 在少量数据阶段形成可运行闭环.
+2. 作为后续 learned Human-Object Interaction 模型的可解释 baseline.
+
+* 6. Zone Builder
+
+MVP 支持图像空间矩形 Zone.
+
+用于快速验证:
+
+- 工具架.
+- 工件料框.
+- 装配区域.
+- 禁止区域.
+
+正式多摄像头部署应逐步迁移到 C03 Pose Fusion 的 World Coordinate Zone.
+
+* 7. 当前闭环
+
+现在可测试:
+
+#+BEGIN_SRC text
+Object bbox in component_bin_A
+        |
+wrist approaches object
+        |
+HELD_BY stable for N frames
+        |
+PICK
+        |
+object moves
+        |
+object in assembly_zone
+        |
+FREE stable for N frames
+        |
+PLACE
+        |
+Rule Engine
+        |
+PASS / VIOLATION
+#+END_SRC
+
+* 8. 下一阶段
+
+下一阶段进入 Multi-view Identity and Geometry:
+
+- 跨视角 operator association.
+- 跨视角 object association.
+- camera calibration profile.
+- 2D -> world coordinate.
+- triangulated wrist/tool point.
+- world-space Zone.
+- occlusion confidence.
+
+完成后, 四路摄像头才会从"四路独立证据"真正升级为"一个统一空间模型".

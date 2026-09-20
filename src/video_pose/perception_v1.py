@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
-
 from .detections import Detection, TrackedDetection
 from .detector import ObjectDetector
 from .frames import DecodedFrame
@@ -11,7 +9,7 @@ from .tracking import IoUTracker
 
 
 class PerceptionV1Model:
-    """Detector + operator tracking + optional top-down pose estimator."""
+    """Detector + person/object tracking + optional top-down pose estimator."""
 
     def __init__(
         self,
@@ -27,8 +25,8 @@ class PerceptionV1Model:
         self.person_class = person_class
         self.person_confidence = person_confidence
         self.object_confidence = object_confidence
-        self._trackers: dict[str, IoUTracker] = {}
-        self._frame_counters: dict[str, int] = defaultdict(int)
+        self._person_trackers: dict[str, IoUTracker] = {}
+        self._object_trackers: dict[str, IoUTracker] = {}
 
     def infer(
         self,
@@ -37,9 +35,6 @@ class PerceptionV1Model:
         session_id: str,
     ) -> list[Observation]:
         camera_id = frame.ref.camera_id
-        self._frame_counters[camera_id] += 1
-        frame_index = self._frame_counters[camera_id]
-
         detections = self.detector.detect(frame.image)
         persons = [
             detection
@@ -54,11 +49,16 @@ class PerceptionV1Model:
             and detection.confidence >= self.object_confidence
         ]
 
-        tracker = self._trackers.setdefault(
+        person_tracker = self._person_trackers.setdefault(
             camera_id,
             IoUTracker(prefix=f"{camera_id}-person"),
         )
-        tracked_persons = tracker.update(persons)
+        object_tracker = self._object_trackers.setdefault(
+            camera_id,
+            IoUTracker(prefix=f"{camera_id}-object"),
+        )
+        tracked_persons = person_tracker.update(persons)
+        tracked_objects = object_tracker.update(objects)
 
         observations: list[Observation] = []
         for person in tracked_persons:
@@ -68,21 +68,16 @@ class PerceptionV1Model:
                     session_id=session_id,
                     detection=person,
                     observation_type=ObservationType.PERSON,
-                    entity_id=person.entity_id,
                 )
             )
 
-        for index, detection in enumerate(objects, start=1):
+        for tracked_object in tracked_objects:
             observations.append(
                 self._detection_observation(
                     frame=frame,
                     session_id=session_id,
-                    detection=detection,
+                    detection=tracked_object,
                     observation_type=ObservationType.OBJECT,
-                    entity_id=(
-                        f"{camera_id}:{detection.class_name}:"
-                        f"{frame_index}:{index}"
-                    ),
                 )
             )
 
@@ -92,7 +87,7 @@ class PerceptionV1Model:
                     observations.append(
                         Observation(
                             observation_id=(
-                                f"{camera_id}:{frame_index}:"
+                                f"{camera_id}:{frame.ref.normalized_timestamp_ms}:"
                                 f"{pose.person_entity_id}:{keypoint.name}"
                             ),
                             session_id=session_id,
@@ -103,8 +98,8 @@ class PerceptionV1Model:
                             entity_class=keypoint.name,
                             confidence=keypoint.confidence,
                             point_2d=Point2D(x=keypoint.x, y=keypoint.y),
-                            model_name=self.detector.model_name,
-                            model_version=self.detector.model_version,
+                            model_name="pose-estimator",
+                            model_version="v1",
                             attributes={"person_id": pose.person_entity_id},
                         )
                     )
@@ -115,20 +110,19 @@ class PerceptionV1Model:
         *,
         frame: DecodedFrame,
         session_id: str,
-        detection: Detection | TrackedDetection,
+        detection: TrackedDetection,
         observation_type: ObservationType,
-        entity_id: str,
     ) -> Observation:
         return Observation(
             observation_id=(
                 f"{frame.ref.camera_id}:{frame.ref.normalized_timestamp_ms}:"
-                f"{entity_id}"
+                f"{detection.entity_id}"
             ),
             session_id=session_id,
             camera_id=frame.ref.camera_id,
             timestamp_ms=frame.ref.normalized_timestamp_ms,
             type=observation_type,
-            entity_id=entity_id,
+            entity_id=detection.entity_id,
             entity_class=detection.class_name,
             confidence=detection.confidence,
             bbox=detection.bbox,
