@@ -43,6 +43,10 @@ class MMPoseTopDownEstimator:
         self._model = model
         self._inference_fn = inference_fn
 
+    def load(self) -> Any:
+        model, _ = self._load()
+        return model
+
     def _load(self) -> tuple[Any, Callable[..., Any]]:
         if self._model is not None and self._inference_fn is not None:
             return self._model, self._inference_fn

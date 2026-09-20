@@ -1,0 +1,68 @@
+#+TITLE: Video Pose Persistent Model Pool
+#+SUBTITLE: Reuse Heavy YOLO and RTMPose Backends Across Operation Sessions
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. Session 切换目标
+
+Persistent Camera Hub 已解决 RTSP 重连空窗.
+
+这一层继续解决 GPU 模型重新加载:
+
+#+BEGIN_SRC text
+Service Startup
+  |
+Load YOLO once
+Load RTMPose once
+  |
+Session 001
+  + new trackers
+  + new relations
+  + new actions
+  + new rules
+  |
+Session 002
+  + reuse YOLO/RTMPose
+  + new stateful business context
+#+END_SRC
+
+* 2. 共享与不共享
+
+跨 Session 共享:
+
+- Ultralytics model weights/runtime.
+- MMPose model weights/runtime.
+
+每个 Session 重新创建:
+
+- person/object IoU trackers.
+- Multi-view identity.
+- Human-object relation debounce state.
+- Action recognizers.
+- RealtimeRuleSession.
+
+这样既减少 GPU 加载时间, 又避免上一次 Session 的状态污染下一次 Session.
+
+* 3. 生命周期
+
+FastAPI lifespan:
+
+1. ModelPool.load().
+2. PersistentCameraHub.start().
+3. 等待 Session.
+4. 多个 Session 只重建轻量上下文.
+5. 服务退出时 Hub.stop().
+
+ModelPool.load() 幂等.
+
+* 4. 当前并发约束
+
+当前 Controller 仍限制一个工位同时只能有一个 RUNNING Session.
+
+因此共享模型不发生并发 inference.
+
+未来如支持多个并行工位, 应增加:
+
+- inference scheduler.
+- model execution lock or batching.
+- Triton/ONNX Runtime/TensorRT multi-stream 策略.

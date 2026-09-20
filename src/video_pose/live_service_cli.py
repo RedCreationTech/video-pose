@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .live_service import create_managed_live_app
+from .model_pool import build_persistent_model_pool
 from .persistent_camera import build_persistent_camera_hub
 from .persistent_session_controller import PersistentLiveSessionController
 from .resilient_store import ResilientSessionStore
@@ -49,9 +50,11 @@ def main() -> int:
         loaded,
         processing_queue_size=args.queue_size,
     )
+    model_pool = build_persistent_model_pool(loaded)
     controller = PersistentLiveSessionController(
         loaded,
         hub=hub,
+        model_pool=model_pool,
         audit_root=args.audit_dir,
         processing_queue_size=args.queue_size,
         repository=repository,

@@ -38,6 +38,9 @@ class UltralyticsDetector:
         self.model_version = model_version or weights
         self._model = model
 
+    def load(self) -> Any:
+        return self._load_model()
+
     def _load_model(self) -> Any:
         if self._model is not None:
             return self._model

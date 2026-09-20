@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 
 from .live_runtime import LiveAnalysisUpdate
+from .model_pool import PersistentModelPool
 from .persistent_camera import PersistentCameraHub
 from .pipeline import VideoPosePipeline
 from .realtime_rules import RealtimeRuleSession, RuleSessionUpdate
@@ -16,7 +17,7 @@ from .video_replay import SynchronizedFrameSet
 
 
 class SessionAnalysisRuntime:
-    """Session-scoped inference/rules over a persistent camera hub."""
+    """Session-scoped inference/rules over persistent cameras and models."""
 
     def __init__(
         self,
@@ -155,11 +156,13 @@ def build_session_analysis_runtime(
     hub: PersistentCameraHub,
     session_id: str,
     processing_queue_size: int = 2,
+    model_pool: PersistentModelPool | None = None,
 ) -> SessionAnalysisRuntime:
     pipeline = build_analysis_pipeline(
         config,
         session_id=session_id,
         frame_loader=hub.frame_store,
+        model_pool=model_pool,
     )
     rule_session = RealtimeRuleSession(
         build_rule_engine(config),

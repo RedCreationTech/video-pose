@@ -7,6 +7,7 @@ from .baseline_action import PickPlaceActionRecognizer
 from .calibration import load_planar_calibration
 from .contracts import ActionType
 from .dwell_action import DwellZoneActionRecognizer
+from .model_pool import PersistentModelPool
 from .perception import FrameLoader, MultiViewPerceptionAdapter
 from .perception_v1 import PerceptionV1Model
 from .perspective import load_perspective_calibration
@@ -22,14 +23,10 @@ from .zone_actions import ZoneTransitionRecognizer
 from .zones import ZoneRelationBuilder, load_zones
 
 
-def build_analysis_pipeline(
+def _build_models(
     config: LoadedAnalysisConfig,
-    *,
-    session_id: str,
-    frame_loader: FrameLoader,
-) -> VideoPosePipeline:
+) -> tuple[UltralyticsDetector, MMPoseTopDownEstimator | None]:
     cfg = config.config
-
     detector = UltralyticsDetector(
         str(config.resolve(cfg.detector.weights)),
         confidence=cfg.detector.confidence,
@@ -37,7 +34,6 @@ def build_analysis_pipeline(
         allowed_classes=cfg.detector.allowed_classes,
         class_aliases=cfg.detector.class_aliases,
     )
-
     pose_estimator = None
     if cfg.pose is not None and cfg.pose.enabled:
         pose_estimator = MMPoseTopDownEstimator(
@@ -45,6 +41,23 @@ def build_analysis_pipeline(
             str(config.resolve(cfg.pose.checkpoint)),
             device=cfg.pose.device,
         )
+    return detector, pose_estimator
+
+
+def build_analysis_pipeline(
+    config: LoadedAnalysisConfig,
+    *,
+    session_id: str,
+    frame_loader: FrameLoader,
+    model_pool: PersistentModelPool | None = None,
+) -> VideoPosePipeline:
+    cfg = config.config
+    if model_pool is None:
+        detector, pose_estimator = _build_models(config)
+    else:
+        model_pool.load()
+        detector = model_pool.detector
+        pose_estimator = model_pool.pose_estimator
 
     perception_model = PerceptionV1Model(
         detector,

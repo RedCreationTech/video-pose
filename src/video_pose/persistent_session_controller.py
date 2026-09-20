@@ -9,6 +9,7 @@ from typing import Any
 
 from .live_payload import live_update_payload
 from .live_runtime import LiveAnalysisUpdate
+from .model_pool import PersistentModelPool
 from .persistent_camera import PersistentCameraHub
 from .realtime_rules import RuleSessionUpdate
 from .runtime_config import LoadedAnalysisConfig
@@ -30,13 +31,14 @@ def _utc_now() -> str:
 
 
 class PersistentLiveSessionController:
-    """Manage sessions without reconnecting persistent cameras."""
+    """Manage sessions without reconnecting cameras or reloading models."""
 
     def __init__(
         self,
         config: LoadedAnalysisConfig,
         *,
         hub: PersistentCameraHub,
+        model_pool: PersistentModelPool,
         audit_root: str | Path,
         processing_queue_size: int = 2,
         runtime_factory: Callable[
@@ -47,6 +49,7 @@ class PersistentLiveSessionController:
     ) -> None:
         self.config = config
         self.hub = hub
+        self.model_pool = model_pool
         self.audit = SessionAuditWriter(audit_root)
         self.processing_queue_size = processing_queue_size
         self.runtime_factory = runtime_factory
@@ -57,6 +60,7 @@ class PersistentLiveSessionController:
         self._event_callback: Callable[[LiveAnalysisUpdate], Any] | None = None
 
     def start_hub(self) -> None:
+        self.model_pool.load()
         self.hub.start()
 
     def shutdown(self) -> None:
@@ -83,6 +87,8 @@ class PersistentLiveSessionController:
         with self._lock:
             if not self.hub.running:
                 raise RuntimeError("persistent camera hub is not running")
+            if not self.model_pool.loaded:
+                raise RuntimeError("persistent model pool is not loaded")
             if (
                 self._state is not None
                 and self._state.status == ManagedSessionStatus.RUNNING
@@ -93,6 +99,7 @@ class PersistentLiveSessionController:
             runtime = self.runtime_factory(
                 self.config,
                 hub=self.hub,
+                model_pool=self.model_pool,
                 processing_queue_size=self.processing_queue_size,
                 session_id=session_id,
             )
