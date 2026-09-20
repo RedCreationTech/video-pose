@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import threading
 from collections import deque
@@ -13,7 +12,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from .frames import DecodedFrame
-from .video_replay import FrameRef, SynchronizedFrameSet
+from .video_replay import SynchronizedFrameSet
 
 
 def _utc_now() -> str:
