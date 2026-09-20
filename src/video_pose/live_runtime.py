@@ -33,7 +33,7 @@ class LiveAnalysisRuntime:
         gateway: ThreadedLiveGateway,
         pipeline: VideoPosePipeline,
         rule_session: RealtimeRuleSession,
-        health: LiveHealthRegistry,
+        health: LiveHealthRegistry | None = None,
         processing_queue_size: int = 2,
     ) -> None:
         if processing_queue_size < 1:
@@ -41,7 +41,10 @@ class LiveAnalysisRuntime:
         self.gateway = gateway
         self.pipeline = pipeline
         self.rule_session = rule_session
-        self.health = health
+        self.health = health or LiveHealthRegistry(
+            [],
+            queue_capacity=processing_queue_size,
+        )
         self._last_timestamp_ms = 0
         self._callback: Callable[[LiveAnalysisUpdate], None] | None = None
         self._queue: queue.Queue[SynchronizedFrameSet] = queue.Queue(

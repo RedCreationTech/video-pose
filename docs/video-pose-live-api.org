@@ -1,0 +1,67 @@
+#+TITLE: Video Pose Live API
+#+SUBTITLE: Health, Prometheus Metrics and Realtime WebSocket
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 服务入口
+
+#+BEGIN_SRC sh
+pip install -e '.[api,video,yolo]'
+video-pose-serve \
+  --config configs/live-demo.yaml \
+  --host 0.0.0.0 \
+  --port 8080
+#+END_SRC
+
+* 2. HTTP
+
+#+BEGIN_SRC text
+GET /health/live
+GET /health/ready
+GET /api/v1/runtime/health
+GET /api/v1/runtime/latest
+GET /metrics
+#+END_SRC
+
+=/health/ready= 根据四路摄像头健康状态返回:
+
+- 200: ready.
+- 503: not ready.
+
+* 3. WebSocket
+
+#+BEGIN_SRC text
+WS /api/v1/realtime
+#+END_SRC
+
+消息:
+
+#+BEGIN_SRC json
+{
+  "type": "runtime.update",
+  "sequence": 100,
+  "payload": {
+    "timestamp_ms": 12345,
+    "actions": [],
+    "rule_updates": []
+  }
+}
+#+END_SRC
+
+5 秒内没有新事件时发送 heartbeat.
+
+* 4. 线程模型
+
+LiveAnalysisRuntime 在后台 capture/inference 线程运行.
+
+LiveEventBroker 使用 Condition 进行线程安全发布.
+
+WebSocket handler 通过 asyncio.to_thread 等待事件, 不让实时采集线程依赖 asyncio.
+
+* 5. 下一步
+
+- API token/RBAC.
+- WebSocket client backpressure.
+- Session start/stop API.
+- OpenTelemetry tracing.
+- evidence API.

@@ -3,45 +3,67 @@
 
 * 当前版本
 
-Video Pose 0.6 已具备单工位四路视频 PoC 工具链:
+Video Pose 0.10 已形成离线与实时双链路:
 
 #+BEGIN_SRC text
-Doctor
-  |
-Calibration
-  |
-4路录像
-  |
+4 x Camera / Video
+       |
+Time Sync + Health + Reconnect
+       |
+Bounded Queue / Drop Oldest
+       |
 YOLO + Tracking + RTMPose
-  |
+       |
 World Projection + Multi-view Identity
-  |
+       |
 Human-Object / Zone Relation
-  |
-ActionEvent + Rule Engine
-  |
+       |
+ActionEvent
+       |
+Realtime Rule Session
+       |
 Violation / Score
-  |
-Evidence + Debug Overlay
-  |
-Golden Replay Evaluation
+       |
+HTTP + WebSocket + Prometheus
 #+END_SRC
 
-* 环境检查
+* 实时服务
+
+安装:
 
 #+BEGIN_SRC sh
-video-pose-doctor --config configs/offline-demo.yaml
+pip install -e '.[api,video,yolo]'
 #+END_SRC
 
-* 平面标定
+启动:
 
 #+BEGIN_SRC sh
-video-pose-calibrate \
-  --input fixtures/calibration/front-correspondences.yaml \
-  --output front-calibration.yaml
+video-pose-serve \
+  --config configs/offline-demo.yaml \
+  --host 0.0.0.0 \
+  --port 8080
 #+END_SRC
 
-* 四路离线分析
+接口:
+
+#+BEGIN_SRC text
+GET /health/live
+GET /health/ready
+GET /api/v1/runtime/health
+GET /api/v1/runtime/latest
+GET /metrics
+WS  /api/v1/realtime
+#+END_SRC
+
+* 实时 CLI
+
+#+BEGIN_SRC sh
+video-pose-live \
+  --config configs/offline-demo.yaml \
+  --queue-size 2
+#+END_SRC
+
+* 离线分析
 
 #+BEGIN_SRC sh
 video-pose-analyze \
@@ -51,33 +73,22 @@ video-pose-analyze \
   --debug-overlay-dir output/debug
 #+END_SRC
 
-Debug 输出:
-
-#+BEGIN_SRC text
-front-debug.mp4
-rear-debug.mp4
-left-debug.mp4
-right-debug.mp4
-#+END_SRC
-
 * Golden Replay
 
 #+BEGIN_SRC sh
 video-pose-evaluate \
-  --dataset datasets/golden-v1/manifest.yaml \
-  --min-action-f1 0.90 \
-  --min-violation-f1 0.90 \
-  --min-session-accuracy 0.95
+  --dataset datasets/golden-v1/manifest.yaml
 #+END_SRC
 
-* 安装
+* 现场工具
 
-#+BEGIN_SRC sh
-pip install -e '.[dev,video,yolo]'
+#+BEGIN_SRC text
+video-pose-doctor
+video-pose-calibrate
+video-pose-camera-model
+video-pose-calibration-health
 #+END_SRC
-
-MMPose/MMCV/PyTorch/CUDA 必须按目标 GPU 环境固定版本.
 
 * 文档
 
-详细设计见 =docs/=.
+详细 C4, 现场 PoC, 实时服务与测试设计见 =docs/=.
