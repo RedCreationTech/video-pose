@@ -272,7 +272,32 @@ class PersistentLiveSessionController:
         method = getattr(self.repository, "list_pending_reviews", None)
         if not callable(method):
             return []
-        return method(limit)
+        reviews = method(limit)
+        evidence_cache: dict[str, list[dict[str, Any]]] = {}
+        list_evidence = getattr(self.hub, "list_evidence", None)
+
+        output: list[dict[str, Any]] = []
+        for review in reviews:
+            item = dict(review)
+            session_id = str(item.get("session_id", ""))
+            if callable(list_evidence) and session_id:
+                if session_id not in evidence_cache:
+                    evidence_cache[session_id] = list_evidence(session_id)
+                item["evidence"] = [
+                    manifest
+                    for manifest in evidence_cache[session_id]
+                    if (
+                        manifest.get("rule_id") == item.get("rule_id")
+                        and manifest.get("step_code")
+                        == item.get("step_code")
+                        and manifest.get("event_id")
+                        == item.get("event_id")
+                    )
+                ]
+            else:
+                item["evidence"] = []
+            output.append(item)
+        return output
 
     def review_violation(
         self,
