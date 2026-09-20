@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .detections import Detection, TrackedDetection
+from .detections import TrackedDetection
 from .detector import ObjectDetector
 from .frames import DecodedFrame
 from .observations import Observation, ObservationType, Point2D

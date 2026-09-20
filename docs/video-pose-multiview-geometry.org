@@ -1,0 +1,128 @@
+#+TITLE: Video Pose Multi-view Geometry MVP
+#+SUBTITLE: 平面标定, 世界坐标投影与跨视角身份关联
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 目标
+
+第一版多视角统一空间采用工作台平面 Homography.
+
+#+BEGIN_SRC text
+Front/Rear/Left/Right image point
+          |
+3x3 Homography
+          |
+Workstation XY
+          |
+World-space clustering
+          |
+Canonical Entity ID
+#+END_SRC
+
+它适用于:
+
+- 工具架.
+- 工件料框.
+- 工作台.
+- 平面装配区域.
+
+* 2. 为什么先做平面模型
+
+完整 3D 标定需要:
+
+- Camera intrinsic.
+- Distortion.
+- Camera extrinsic.
+- Triangulation.
+- Multi-view correspondence.
+
+第一版业务动作大部分围绕工作台完成, 因此平面 Homography 可以更快建立统一空间和跨视角对象身份.
+
+完整 3D 会作为后续增强, 不替代当前接口.
+
+* 3. Planar Calibration
+
+每个摄像头配置 3x3 Homography:
+
+#+BEGIN_SRC text
+[x_world]   [h00 h01 h02] [x_image]
+[y_world] = [h10 h11 h12] [y_image]
+[w      ]   [h20 h21 h22] [1      ]
+
+X = x_world / w
+Y = y_world / w
+#+END_SRC
+
+单位建议统一为 mm.
+
+* 4. WorldProjectionProcessor
+
+输入:
+
+- PERSON bbox.
+- OBJECT bbox.
+- BODY_KEYPOINT point_2d.
+
+输出:
+
+在 Observation 上增加 =point_3d=, 其中平面 MVP 的 z=0.
+
+Box anchor 可以选择:
+
+- center.
+- bottom_center.
+
+* 5. MultiViewIdentityProcessor
+
+同一时刻, 对相同 class 的世界坐标点进行距离聚类.
+
+例如:
+
+#+BEGIN_SRC text
+cam-front-object-0001   (502, 301)
+cam-left-object-0007    (527, 314)
+
+distance < 120 mm
+        |
+        v
+world-component_A-0001
+#+END_SRC
+
+同一个 world identity 会跨帧保持.
+
+* 6. Person 与 Keypoint
+
+PERSON 被映射到 world person id 后, BODY_KEYPOINT 的 =person_id= 同步改写.
+
+#+BEGIN_SRC text
+cam-front-person-0001:right_wrist
+              |
+              v
+world-person-0001:right_wrist
+#+END_SRC
+
+这样不同视角产生的 Human-Object Relation 可以在 Fusion 层合并.
+
+* 7. 局限
+
+平面 Homography 对离开工作台平面的点存在误差, 尤其是:
+
+- 高举手臂.
+- 工具明显离开台面.
+- 大范围站立移动.
+
+因此它是 MVP 空间模型, 不是最终 3D 几何模型.
+
+* 8. 后续完整 3D
+
+下一版增加:
+
+- Zhang camera calibration.
+- distortion correction.
+- camera projection matrix.
+- multi-view epipolar association.
+- DLT/optimal triangulation.
+- 3D wrist/tool trajectory.
+- reprojection error.
+- calibration health monitor.

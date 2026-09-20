@@ -1,0 +1,14 @@
+profile_id: planar-demo
+version: 1
+cameras:
+  - camera_id: cam-front
+    homography:
+      - [2.0, 0.0, 0.0]
+      - [0.0, 2.0, 0.0]
+      - [0.0, 0.0, 1.0]
+
+  - camera_id: cam-left
+    homography:
+      - [0.0, 2.0, 0.0]
+      - [-2.0, 0.0, 1000.0]
+      - [0.0, 0.0, 1.0]

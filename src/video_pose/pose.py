@@ -5,7 +5,6 @@ from typing import Any, Protocol
 
 from .detections import TrackedDetection
 
-
 COCO_KEYPOINT_NAMES = (
     "nose",
     "left_eye",
