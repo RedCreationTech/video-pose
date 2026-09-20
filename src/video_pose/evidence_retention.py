@@ -24,6 +24,14 @@ class EvidenceRetentionReport(BaseModel):
     over_capacity: bool
 
 
+class EvidenceRetentionStatus(BaseModel):
+    artifact_count: int
+    protected_count: int
+    total_bytes: int
+    max_total_bytes: int
+    over_capacity: bool
+
+
 class _EvidenceDirectory(BaseModel):
     directory: Path
     manifest: LiveEvidenceManifest
@@ -41,6 +49,20 @@ class EvidenceRetentionManager:
     ) -> None:
         self.root = Path(root)
         self.policy = policy or EvidenceRetentionPolicy()
+
+    def status(self) -> EvidenceRetentionStatus:
+        entries = self._entries()
+        total = sum(entry.size_bytes for entry in entries)
+        protected_count = sum(
+            1 for entry in entries if self._protected(entry)
+        )
+        return EvidenceRetentionStatus(
+            artifact_count=len(entries),
+            protected_count=protected_count,
+            total_bytes=total,
+            max_total_bytes=self.policy.max_total_bytes,
+            over_capacity=total > self.policy.max_total_bytes,
+        )
 
     def cleanup(
         self,

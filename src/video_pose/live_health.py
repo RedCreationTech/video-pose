@@ -49,9 +49,26 @@ class RuntimeHealthSnapshot(BaseModel):
     max_gpu_reserved_mb: float = 0.0
 
 
+class EvidenceHealthSnapshot(BaseModel):
+    enabled: bool = True
+    submitted_total: int = 0
+    processed_total: int = 0
+    dropped_total: int = 0
+    errors_total: int = 0
+    queue_depth: int = 0
+    queue_capacity: int = 0
+    drop_ratio: float = 0.0
+    artifact_count: int = 0
+    protected_count: int = 0
+    total_bytes: int = 0
+    max_total_bytes: int = 0
+    over_capacity: bool = False
+
+
 class LiveHealthSnapshot(BaseModel):
     cameras: list[CameraHealthSnapshot] = Field(default_factory=list)
     runtime: RuntimeHealthSnapshot
+    evidence: EvidenceHealthSnapshot | None = None
     ready: bool
 
 

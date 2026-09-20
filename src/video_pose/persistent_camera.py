@@ -87,7 +87,14 @@ class PersistentCameraHub:
             self._subscribers.pop(token, None)
 
     def health_snapshot(self) -> LiveHealthSnapshot:
-        return self.health.snapshot()
+        snapshot = self.health.snapshot()
+        if self.evidence is None:
+            return snapshot
+        return snapshot.model_copy(
+            update={
+                "evidence": self.evidence.health_snapshot(),
+            }
+        )
 
     def camera_catalog(self) -> list[dict[str, Any]]:
         health_by_id = {

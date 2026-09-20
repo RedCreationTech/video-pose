@@ -56,6 +56,61 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
             ]
         )
 
+    evidence = snapshot.evidence
+    if evidence is not None:
+        lines.extend(
+            [
+                _metric(
+                    "video_pose_evidence_submitted_total",
+                    evidence.submitted_total,
+                ),
+                _metric(
+                    "video_pose_evidence_processed_total",
+                    evidence.processed_total,
+                ),
+                _metric(
+                    "video_pose_evidence_dropped_total",
+                    evidence.dropped_total,
+                ),
+                _metric(
+                    "video_pose_evidence_errors_total",
+                    evidence.errors_total,
+                ),
+                _metric(
+                    "video_pose_evidence_queue_depth",
+                    evidence.queue_depth,
+                ),
+                _metric(
+                    "video_pose_evidence_queue_capacity",
+                    evidence.queue_capacity,
+                ),
+                _metric(
+                    "video_pose_evidence_drop_ratio",
+                    evidence.drop_ratio,
+                ),
+                _metric(
+                    "video_pose_evidence_artifacts",
+                    evidence.artifact_count,
+                ),
+                _metric(
+                    "video_pose_evidence_protected_artifacts",
+                    evidence.protected_count,
+                ),
+                _metric(
+                    "video_pose_evidence_storage_bytes",
+                    evidence.total_bytes,
+                ),
+                _metric(
+                    "video_pose_evidence_storage_limit_bytes",
+                    evidence.max_total_bytes,
+                ),
+                _metric(
+                    "video_pose_evidence_over_capacity",
+                    1 if evidence.over_capacity else 0,
+                ),
+            ]
+        )
+
     runtime = snapshot.runtime
     lines.extend(
         [

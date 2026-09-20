@@ -8,9 +8,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .evidence_retention import EvidenceRetentionManager
+from .evidence_retention import (
+    EvidenceRetentionManager,
+    EvidenceRetentionStatus,
+)
 from .frames import DecodedFrame
 from .live_evidence import LiveEvidenceBuffer, LiveEvidenceManifest
+from .live_health import EvidenceHealthSnapshot
 from .video_replay import FrameRef, SynchronizedFrameSet
 
 
@@ -50,6 +54,7 @@ class AsyncLiveEvidenceRecorder:
         queue_size: int = 2,
         retention: EvidenceRetentionManager | None = None,
         cleanup_interval_s: float = 3600.0,
+        status_refresh_interval_s: float = 60.0,
     ) -> None:
         if queue_size < 1:
             raise ValueError("queue_size must be >= 1")
@@ -57,7 +62,10 @@ class AsyncLiveEvidenceRecorder:
         self.queue_size = queue_size
         self.retention = retention
         self.cleanup_interval_s = cleanup_interval_s
+        self.status_refresh_interval_s = status_refresh_interval_s
         self._last_cleanup_monotonic = 0.0
+        self._last_status_monotonic = 0.0
+        self._retention_status: EvidenceRetentionStatus | None = None
         self._queue: queue.Queue[_CapturedBatch] = queue.Queue(
             maxsize=queue_size
         )
@@ -127,6 +135,49 @@ class AsyncLiveEvidenceRecorder:
                 queue_depth=self._queue.qsize(),
                 queue_capacity=self.queue_size,
             )
+
+    def health_snapshot(self) -> EvidenceHealthSnapshot:
+        stats = self.stats()
+        retention = self._retention_snapshot()
+        drop_ratio = (
+            stats.dropped_total / stats.submitted_total
+            if stats.submitted_total
+            else 0.0
+        )
+        return EvidenceHealthSnapshot(
+            submitted_total=stats.submitted_total,
+            processed_total=stats.processed_total,
+            dropped_total=stats.dropped_total,
+            errors_total=stats.errors_total,
+            queue_depth=stats.queue_depth,
+            queue_capacity=stats.queue_capacity,
+            drop_ratio=drop_ratio,
+            artifact_count=(
+                retention.artifact_count
+                if retention is not None
+                else 0
+            ),
+            protected_count=(
+                retention.protected_count
+                if retention is not None
+                else 0
+            ),
+            total_bytes=(
+                retention.total_bytes
+                if retention is not None
+                else 0
+            ),
+            max_total_bytes=(
+                retention.max_total_bytes
+                if retention is not None
+                else 0
+            ),
+            over_capacity=(
+                retention.over_capacity
+                if retention is not None
+                else False
+            ),
+        )
 
     def schedule(
         self,
@@ -219,3 +270,30 @@ class AsyncLiveEvidenceRecorder:
             return
         self.retention.cleanup()
         self._last_cleanup_monotonic = now
+        self._refresh_retention_status(now)
+
+    def _retention_snapshot(self) -> EvidenceRetentionStatus | None:
+        if self.retention is None:
+            return None
+        now = time.monotonic()
+        with self._lock:
+            cached = self._retention_status
+            last = self._last_status_monotonic
+        if (
+            cached is not None
+            and now - last < self.status_refresh_interval_s
+        ):
+            return cached
+        return self._refresh_retention_status(now)
+
+    def _refresh_retention_status(
+        self,
+        now: float,
+    ) -> EvidenceRetentionStatus | None:
+        if self.retention is None:
+            return None
+        status = self.retention.status()
+        with self._lock:
+            self._retention_status = status
+            self._last_status_monotonic = now
+        return status

@@ -14,6 +14,13 @@ class SoakThresholds(BaseModel):
     max_processing_latency_ms: float = Field(default=1000.0, gt=0.0)
     max_processing_p99_ms: float = Field(default=750.0, gt=0.0)
     max_rss_growth_mb: float = Field(default=512.0, ge=0.0)
+    max_evidence_drop_ratio: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+    )
+    max_evidence_errors: int = Field(default=0, ge=0)
+    fail_on_evidence_over_capacity: bool = True
 
 
 class SoakSample(BaseModel):
@@ -38,6 +45,9 @@ class SoakReport(BaseModel):
     max_rss_mb: float
     rss_growth_mb: float
     max_gpu_reserved_mb: float
+    evidence_drop_ratio: float | None
+    evidence_errors_total: int | None
+    evidence_over_capacity: bool | None
     passed: bool
     failures: list[str]
 
@@ -115,6 +125,17 @@ class SoakMonitor:
             default=0.0,
         )
 
+        evidence = latest.evidence
+        evidence_drop_ratio = (
+            evidence.drop_ratio if evidence is not None else None
+        )
+        evidence_errors_total = (
+            evidence.errors_total if evidence is not None else None
+        )
+        evidence_over_capacity = (
+            evidence.over_capacity if evidence is not None else None
+        )
+
         failures: list[str] = []
         thresholds = self.thresholds
         if ready_ratio < thresholds.min_ready_ratio:
@@ -161,6 +182,29 @@ class SoakMonitor:
                 f"rss_growth_mb={rss_growth:.3f} "
                 f"> {thresholds.max_rss_growth_mb:.3f}"
             )
+        if evidence is not None:
+            if (
+                evidence.drop_ratio
+                > thresholds.max_evidence_drop_ratio
+            ):
+                failures.append(
+                    f"evidence_drop_ratio={evidence.drop_ratio:.6f} "
+                    f"> {thresholds.max_evidence_drop_ratio:.6f}"
+                )
+            if (
+                evidence.errors_total
+                > thresholds.max_evidence_errors
+            ):
+                failures.append(
+                    "evidence_errors_total="
+                    f"{evidence.errors_total} "
+                    f"> {thresholds.max_evidence_errors}"
+                )
+            if (
+                thresholds.fail_on_evidence_over_capacity
+                and evidence.over_capacity
+            ):
+                failures.append("evidence_over_capacity=true")
 
         return SoakReport(
             duration_s=self.samples[-1].elapsed_s,
@@ -179,6 +223,9 @@ class SoakMonitor:
             max_rss_mb=max_rss,
             rss_growth_mb=rss_growth,
             max_gpu_reserved_mb=max_gpu_reserved,
+            evidence_drop_ratio=evidence_drop_ratio,
+            evidence_errors_total=evidence_errors_total,
+            evidence_over_capacity=evidence_over_capacity,
             passed=not failures,
             failures=failures,
         )

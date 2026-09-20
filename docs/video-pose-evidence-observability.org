@@ -1,0 +1,54 @@
+#+TITLE: Video Pose Evidence Observability
+#+SUBTITLE: Worker Backpressure, Storage Capacity and Soak Release Gates
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Health
+
+当 Evidence 启用时, =/api/v1/runtime/health= 额外返回:
+
+- submitted_total.
+- processed_total.
+- dropped_total.
+- errors_total.
+- queue depth/capacity.
+- drop_ratio.
+- artifact_count.
+- protected_count.
+- total/max bytes.
+- over_capacity.
+
+* 2. Prometheus
+
+新增:
+
+#+BEGIN_SRC text
+video_pose_evidence_submitted_total
+video_pose_evidence_processed_total
+video_pose_evidence_dropped_total
+video_pose_evidence_errors_total
+video_pose_evidence_queue_depth
+video_pose_evidence_queue_capacity
+video_pose_evidence_drop_ratio
+video_pose_evidence_artifacts
+video_pose_evidence_protected_artifacts
+video_pose_evidence_storage_bytes
+video_pose_evidence_storage_limit_bytes
+video_pose_evidence_over_capacity
+#+END_SRC
+
+* 3. 低开销容量状态
+
+Retention status 默认最多每 60 秒重新扫描一次证据目录. Cleanup 执行后立即刷新缓存.
+
+因此 Prometheus 高频抓取不会每次递归扫描 evidence root.
+
+* 4. 72h Gate
+
+新增默认门槛:
+
+- evidence drop ratio <= 20%.
+- evidence worker errors = 0.
+- evidence over-capacity = false.
+
+如果 Evidence 未启用, 不应用这些门槛.

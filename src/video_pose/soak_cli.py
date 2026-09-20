@@ -38,6 +38,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=512.0,
     )
+    parser.add_argument(
+        "--max-evidence-drop-ratio",
+        type=float,
+        default=0.20,
+    )
+    parser.add_argument(
+        "--max-evidence-errors",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--allow-evidence-over-capacity",
+        action="store_true",
+    )
     return parser
 
 
@@ -52,6 +66,11 @@ def main() -> int:
         max_processing_latency_ms=args.max_processing_latency_ms,
         max_processing_p99_ms=args.max_processing_p99_ms,
         max_rss_growth_mb=args.max_rss_growth_mb,
+        max_evidence_drop_ratio=args.max_evidence_drop_ratio,
+        max_evidence_errors=args.max_evidence_errors,
+        fail_on_evidence_over_capacity=(
+            not args.allow_evidence_over_capacity
+        ),
     )
     monitor = SoakMonitor(thresholds)
     runtime = build_live_runtime(
