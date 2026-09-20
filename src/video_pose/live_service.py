@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from .auth import (
-    AuthManager,
     AuthenticationError,
+    AuthManager,
     AuthorizationError,
     Permission,
 )
