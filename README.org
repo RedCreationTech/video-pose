@@ -1,28 +1,68 @@
 #+TITLE: Video Pose
 #+SUBTITLE: 多视角人员动作规范检测平台
 
-* 当前闭环
+* 当前版本
+
+Video Pose 0.5 已形成单工位四路视频 PoC 工具链:
 
 #+BEGIN_SRC text
+Doctor
+  |
+Calibration
+  |
 4路录像
-   |
-Time Sync + FrameLoader
-   |
+  |
 YOLO + Tracking + RTMPose
-   |
-Observation
-   |
+  |
 World Projection + Multi-view Identity
-   |
-Zone + Human-Object Relation
-   |
+  |
+Human-Object / Zone Relation
+  |
 ActionEvent
-   |
+  |
 Rule Engine
-   |
+  |
 Violation / Score
-   |
-4-View Evidence Clips + 2x2 Mosaic
+  |
+4路 Evidence
+  |
+Golden Replay Evaluation
+#+END_SRC
+
+* 环境检查
+
+#+BEGIN_SRC sh
+video-pose-doctor --config configs/offline-demo.yaml
+#+END_SRC
+
+* 平面标定
+
+#+BEGIN_SRC sh
+video-pose-calibrate \
+  --input fixtures/calibration/front-correspondences.yaml \
+  --output front-calibration.yaml
+#+END_SRC
+
+* 四路离线分析
+
+#+BEGIN_SRC sh
+video-pose-analyze \
+  --config configs/offline-demo.yaml \
+  --output result.json \
+  --evidence-dir output/evidence
+#+END_SRC
+
+* Golden Replay
+
+#+BEGIN_SRC sh
+video-pose-evaluate \
+  --dataset datasets/golden-v1/manifest.yaml
+#+END_SRC
+
+Golden Dataset 示例已放在:
+
+#+BEGIN_SRC text
+datasets/golden-v1/
 #+END_SRC
 
 * 安装
@@ -33,60 +73,16 @@ Violation / Score
 pip install -e '.[dev]'
 #+END_SRC
 
-离线视频 + YOLO:
+现场离线视频 + YOLO:
 
 #+BEGIN_SRC sh
 pip install -e '.[dev,video,yolo]'
 #+END_SRC
 
-MMPose 需要根据目标 PyTorch/CUDA 环境安装兼容 MMCV.
-
-系统还需要:
-
-- ffprobe, 用于真实帧时间戳.
-- ffmpeg, 用于违规证据裁剪和多视角合成.
-
-* 离线真实视频分析
-
-#+BEGIN_SRC sh
-video-pose-analyze \
-  --config configs/offline-demo.yaml \
-  --output result.json
-#+END_SRC
-
-同时生成违规证据:
-
-#+BEGIN_SRC sh
-video-pose-analyze \
-  --config configs/offline-demo.yaml \
-  --output result.json \
-  --evidence-dir output/evidence
-#+END_SRC
-
-证据目录示例:
-
-#+BEGIN_SRC text
-output/evidence/evidence-0001/
-  front.mp4
-  rear.mp4
-  left.mp4
-  right.mp4
-  multiview.mp4
-#+END_SRC
-
-* 当前 MVP 边界
-
-已经具备单工位, 单操作员, 四路录像的 PoC 软件闭环.
-
-仍需现场数据完成:
-
-- 工具/工件 detector fine-tune.
-- RTMPose 目标工位准确率验证.
-- camera calibration.
-- zone 标定.
-- 阈值调优.
-- Golden Replay 数据集.
+MMPose/MMCV/PyTorch/CUDA 必须按目标 GPU 环境固定版本.
 
 * 文档
 
-详细设计见 =docs/=.
+- =docs/video-pose-field-poc.org=: 现场 PoC Runbook.
+- =docs/video-pose-system-architecture.org=: C4 总体设计.
+- =docs/video-pose-test-plan.org=: 测试与验收.

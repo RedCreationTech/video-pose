@@ -1,0 +1,8 @@
+session_id: demo-bad
+expected_pass: false
+actions:
+  - action: PICK
+    object_class: component_A
+violations:
+  - type: SPATIAL
+    step: S020

@@ -1,0 +1,10 @@
+{
+  "actions": [
+    {"action": "PICK", "object": {"class": "component_A"}},
+    {"action": "PLACE", "object": {"class": "component_A"}}
+  ],
+  "evaluation": {
+    "passed": true,
+    "violations": []
+  }
+}

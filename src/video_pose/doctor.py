@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+import importlib.util
+import shutil
+import sys
+from enum import StrEnum
+from pathlib import Path
+from typing import Callable
+
+from pydantic import BaseModel
+
+from .runtime_config import LoadedAnalysisConfig, load_analysis_config
+
+
+class CheckStatus(StrEnum):
+    PASS = "PASS"
+    WARN = "WARN"
+    FAIL = "FAIL"
+
+
+class DoctorCheck(BaseModel):
+    name: str
+    status: CheckStatus
+    required: bool
+    detail: str
+
+
+class DoctorReport(BaseModel):
+    checks: list[DoctorCheck]
+
+    @property
+    def passed(self) -> bool:
+        return not any(
+            check.required and check.status == CheckStatus.FAIL
+            for check in self.checks
+        )
+
+
+def _module_exists(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
+
+
+def _binary_exists(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def _path_check(
+    name: str,
+    path: Path,
+    *,
+    required: bool = True,
+) -> DoctorCheck:
+    if path.exists():
+        return DoctorCheck(
+            name=name,
+            status=CheckStatus.PASS,
+            required=required,
+            detail=str(path),
+        )
+    return DoctorCheck(
+        name=name,
+        status=CheckStatus.FAIL if required else CheckStatus.WARN,
+        required=required,
+        detail=f"missing: {path}",
+    )
+
+
+def _module_check(
+    module: str,
+    *,
+    required: bool,
+) -> DoctorCheck:
+    exists = _module_exists(module)
+    return DoctorCheck(
+        name=f"python-module:{module}",
+        status=CheckStatus.PASS if exists else (
+            CheckStatus.FAIL if required else CheckStatus.WARN
+        ),
+        required=required,
+        detail="available" if exists else "not installed",
+    )
+
+
+def _binary_check(
+    binary: str,
+    *,
+    required: bool,
+) -> DoctorCheck:
+    exists = _binary_exists(binary)
+    return DoctorCheck(
+        name=f"binary:{binary}",
+        status=CheckStatus.PASS if exists else (
+            CheckStatus.FAIL if required else CheckStatus.WARN
+        ),
+        required=required,
+        detail=shutil.which(binary) or "not found in PATH",
+    )
+
+
+def _cuda_check(config: LoadedAnalysisConfig) -> DoctorCheck:
+    devices = [config.config.detector.device]
+    if config.config.pose is not None and config.config.pose.enabled:
+        devices.append(config.config.pose.device)
+    needs_cuda = any(
+        isinstance(device, str) and device.lower().startswith("cuda")
+        for device in devices
+    )
+    if not needs_cuda:
+        return DoctorCheck(
+            name="cuda",
+            status=CheckStatus.PASS,
+            required=False,
+            detail="CUDA device not requested by config",
+        )
+    if not _module_exists("torch"):
+        return DoctorCheck(
+            name="cuda",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail="config requests CUDA but torch is not installed",
+        )
+    try:
+        import torch
+    except Exception as exc:
+        return DoctorCheck(
+            name="cuda",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail=f"torch import failed: {exc}",
+        )
+    available = bool(torch.cuda.is_available())
+    detail = "CUDA available" if available else "torch.cuda.is_available() is false"
+    return DoctorCheck(
+        name="cuda",
+        status=CheckStatus.PASS if available else CheckStatus.FAIL,
+        required=True,
+        detail=detail,
+    )
+
+
+def build_doctor_report(
+    config_path: str | Path,
+    *,
+    module_exists: Callable[[str], bool] | None = None,
+    binary_exists: Callable[[str], bool] | None = None,
+    include_cuda: bool = True,
+) -> DoctorReport:
+    module_probe = module_exists or _module_exists
+    binary_probe = binary_exists or _binary_exists
+    loaded = load_analysis_config(config_path)
+    cfg = loaded.config
+    checks: list[DoctorCheck] = []
+
+    version_ok = sys.version_info >= (3, 11)
+    checks.append(
+        DoctorCheck(
+            name="python",
+            status=CheckStatus.PASS if version_ok else CheckStatus.FAIL,
+            required=True,
+            detail=sys.version.split()[0],
+        )
+    )
+
+    for binary in ("ffprobe", "ffmpeg"):
+        exists = binary_probe(binary)
+        checks.append(
+            DoctorCheck(
+                name=f"binary:{binary}",
+                status=CheckStatus.PASS if exists else CheckStatus.FAIL,
+                required=True,
+                detail="available" if exists else "not found in PATH",
+            )
+        )
+
+    required_modules = ["pydantic", "yaml", "cv2", "ultralytics"]
+    if cfg.pose is not None and cfg.pose.enabled:
+        required_modules.extend(["mmpose", "mmengine"])
+    for module in required_modules:
+        exists = module_probe(module)
+        checks.append(
+            DoctorCheck(
+                name=f"python-module:{module}",
+                status=CheckStatus.PASS if exists else CheckStatus.FAIL,
+                required=True,
+                detail="available" if exists else "not installed",
+            )
+        )
+
+    assets: list[tuple[str, str | None]] = [
+        ("manifest", cfg.manifest),
+        ("rules", cfg.rules),
+        ("calibration", cfg.calibration),
+        ("zones", cfg.zones),
+        ("detector-weights", cfg.detector.weights),
+    ]
+    if cfg.pose is not None and cfg.pose.enabled:
+        assets.extend(
+            [
+                ("pose-config", cfg.pose.config),
+                ("pose-checkpoint", cfg.pose.checkpoint),
+            ]
+        )
+
+    for name, value in assets:
+        if value is None:
+            continue
+        checks.append(_path_check(name, loaded.resolve(value)))
+
+    if include_cuda:
+        checks.append(_cuda_check(loaded))
+
+    return DoctorReport(checks=checks)

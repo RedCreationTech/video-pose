@@ -1,0 +1,106 @@
+#+TITLE: Video Pose Field PoC Runbook
+#+SUBTITLE: 现场环境检查, 标定, Golden Replay 与验收入口
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 现场前检查
+
+#+BEGIN_SRC sh
+video-pose-doctor --config configs/offline-demo.yaml
+#+END_SRC
+
+检查:
+
+- Python.
+- ffmpeg/ffprobe.
+- OpenCV.
+- Ultralytics.
+- MMPose/MMEngine.
+- CUDA.
+- 四路 manifest.
+- rules.
+- calibration.
+- zones.
+- detector weights.
+- pose config/checkpoint.
+
+必须先让 Doctor 通过, 再采正式 PoC 数据.
+
+* 2. 平面标定
+
+准备至少 4 个不共线的对应点, 推荐 8-20 个.
+
+#+BEGIN_SRC yaml
+camera_id: cam-front
+correspondences:
+  - image: {x: 100, y: 200}
+    world: {x: 0, y: 0}
+#+END_SRC
+
+执行:
+
+#+BEGIN_SRC sh
+video-pose-calibrate \
+  --input front-points.yaml \
+  --output front-calibration.yaml \
+  --max-rmse 30
+#+END_SRC
+
+输出:
+
+- 3x3 Homography.
+- reprojection RMSE.
+- 每个点误差.
+
+* 3. Golden Replay
+
+每个 Golden Session 保存:
+
+#+BEGIN_SRC text
+session/
+  ground-truth.yaml
+  result.json
+#+END_SRC
+
+=ground-truth.yaml= 只保存人工确认的动作和违规.
+
+执行:
+
+#+BEGIN_SRC sh
+video-pose-evaluate \
+  --dataset datasets/golden-v1/manifest.yaml \
+  --min-action-f1 0.90 \
+  --min-violation-f1 0.90 \
+  --min-session-accuracy 0.95
+#+END_SRC
+
+* 4. 第一轮现场数据建议
+
+至少:
+
+- 5 名操作员.
+- 每人 20 个标准 session.
+- 每人 10 个故意违规 session.
+- 150 个 session 起步.
+
+违规应覆盖:
+
+- wrong tool.
+- missing step.
+- wrong order.
+- wrong zone.
+- timeout.
+
+* 5. 发布门槛
+
+建议 MVP 试运行 Gate:
+
+- Doctor PASS.
+- Camera 72 h 稳定性通过.
+- Golden Replay 可重复.
+- 关键违规 Recall >= 95%.
+- 一般违规 Recall >= 90%.
+- Violation Precision >= 90%.
+- 合规 Session 误报率 <= 5%.
+- 每个违规都有四路证据.

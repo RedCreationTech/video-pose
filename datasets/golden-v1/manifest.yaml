@@ -1,0 +1,9 @@
+name: video-pose-golden
+version: "1"
+sessions:
+  - session_id: demo-ok
+    ground_truth: sessions/demo-ok/ground-truth.yaml
+    result: sessions/demo-ok/result.json
+  - session_id: demo-bad
+    ground_truth: sessions/demo-bad/ground-truth.yaml
+    result: sessions/demo-bad/result.json

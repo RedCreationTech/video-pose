@@ -1,0 +1,12 @@
+camera_id: cam-front
+correspondences:
+  - image: {x: 0, y: 0}
+    world: {x: 0, y: 0}
+  - image: {x: 100, y: 0}
+    world: {x: 200, y: 0}
+  - image: {x: 100, y: 50}
+    world: {x: 200, y: 100}
+  - image: {x: 0, y: 50}
+    world: {x: 0, y: 100}
+  - image: {x: 50, y: 25}
+    world: {x: 100, y: 50}

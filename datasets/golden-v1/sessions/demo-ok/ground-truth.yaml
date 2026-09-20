@@ -1,0 +1,8 @@
+session_id: demo-ok
+expected_pass: true
+actions:
+  - action: PICK
+    object_class: component_A
+  - action: PLACE
+    object_class: component_A
+violations: []

@@ -1,0 +1,11 @@
+{
+  "actions": [
+    {"action": "PICK", "object": {"class": "component_A"}}
+  ],
+  "evaluation": {
+    "passed": false,
+    "violations": [
+      {"type": "SPATIAL", "step": "S020"}
+    ]
+  }
+}
