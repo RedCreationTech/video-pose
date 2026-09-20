@@ -336,6 +336,20 @@ class PersistentLiveSessionController:
             "review": review.model_dump(mode="json"),
         }
         self.audit.append_review(session_id, audit_payload)
+        mark_evidence = getattr(
+            self.hub,
+            "mark_evidence_reviewed",
+            None,
+        )
+        if callable(mark_evidence):
+            mark_evidence(
+                session_id,
+                rule_id=audit_payload["rule_id"],
+                step_code=audit_payload["step_code"],
+                event_id=audit_payload["event_id"],
+                status=review.decision.value,
+                reviewed_at=reviewed_at,
+            )
 
         method = getattr(self.repository, "review_violation", None)
         if not callable(method):

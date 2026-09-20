@@ -12,6 +12,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from .frames import DecodedFrame
+from .violation_review import ReviewStatus
 from .video_replay import SynchronizedFrameSet
 
 
@@ -94,6 +95,8 @@ class LiveEvidenceManifest(BaseModel):
     normalized_start_ms: float
     normalized_end_ms: float
     created_at: str
+    review_status: ReviewStatus = ReviewStatus.UNREVIEWED
+    reviewed_at: str | None = None
     cameras_expected: list[str] = Field(default_factory=list)
     cameras_present: list[str] = Field(default_factory=list)
     images: list[EvidenceImage] = Field(default_factory=list)
@@ -127,6 +130,10 @@ class LiveEvidenceBuffer:
         }
         self._last_sample_ms: dict[str, float] = {}
         self._pending: dict[str, _PendingCapture] = {}
+        self._review_overrides: dict[
+            str,
+            tuple[ReviewStatus, str | None],
+        ] = {}
 
     def ingest(
         self,
@@ -177,17 +184,12 @@ class LiveEvidenceBuffer:
         *,
         timestamp_ms: float,
     ) -> str:
-        identity = "|".join(
-            [
-                session_id,
-                str(violation.get("rule_id", "")),
-                str(violation.get("step", "")),
-                str(violation.get("event_id", "")),
-            ]
+        evidence_id = self._evidence_id(
+            session_id,
+            str(violation.get("rule_id", "")),
+            str(violation.get("step", "")),
+            str(violation.get("event_id", "")),
         )
-        evidence_id = "evidence-" + hashlib.sha256(
-            identity.encode("utf-8")
-        ).hexdigest()[:16]
         with self._lock:
             if self.get_manifest(session_id, evidence_id) is not None:
                 return evidence_id
@@ -207,6 +209,62 @@ class LiveEvidenceBuffer:
                 end_ms=timestamp_ms + self.post_roll_ms,
             )
         return evidence_id
+
+    def mark_reviewed(
+        self,
+        session_id: str,
+        *,
+        rule_id: str,
+        step_code: str,
+        event_id: str,
+        status: str | ReviewStatus,
+        reviewed_at: str | None,
+    ) -> str:
+        review_status = ReviewStatus(status)
+        evidence_id = self._evidence_id(
+            session_id,
+            rule_id,
+            step_code,
+            event_id,
+        )
+        with self._lock:
+            manifest = self.get_manifest(session_id, evidence_id)
+            if manifest is not None:
+                updated = manifest.model_copy(
+                    update={
+                        "review_status": review_status,
+                        "reviewed_at": reviewed_at,
+                    }
+                )
+                directory = (
+                    self.root
+                    / _safe_segment(session_id)
+                    / _safe_segment(evidence_id)
+                )
+                (directory / "manifest.json").write_text(
+                    updated.model_dump_json(indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            else:
+                self._review_overrides[evidence_id] = (
+                    review_status,
+                    reviewed_at,
+                )
+        return evidence_id
+
+    @staticmethod
+    def _evidence_id(
+        session_id: str,
+        rule_id: str,
+        step_code: str,
+        event_id: str,
+    ) -> str:
+        identity = "|".join(
+            [session_id, rule_id, step_code, event_id]
+        )
+        return "evidence-" + hashlib.sha256(
+            identity.encode("utf-8")
+        ).hexdigest()[:16]
 
     def flush_pending(self) -> list[LiveEvidenceManifest]:
         with self._lock:
@@ -327,6 +385,10 @@ class LiveEvidenceBuffer:
         complete = set(self.camera_ids) == present
         status = "COMPLETE" if complete and not force_partial else "PARTIAL"
         violation = pending.violation
+        review_status, reviewed_at = self._review_overrides.pop(
+            pending.evidence_id,
+            (ReviewStatus.UNREVIEWED, None),
+        )
         manifest = LiveEvidenceManifest(
             evidence_id=pending.evidence_id,
             session_id=pending.session_id,
@@ -338,6 +400,8 @@ class LiveEvidenceBuffer:
             normalized_start_ms=pending.start_ms,
             normalized_end_ms=pending.end_ms,
             created_at=_utc_now(),
+            review_status=review_status,
+            reviewed_at=reviewed_at,
             cameras_expected=list(self.camera_ids),
             cameras_present=sorted(present),
             images=images,

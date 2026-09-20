@@ -82,6 +82,10 @@ class EvidenceRuntimeConfig(BaseModel):
     jpeg_quality: int = Field(default=70, ge=1, le=100)
     max_pending: int = Field(default=32, ge=1)
     worker_queue_size: int = Field(default=2, ge=1)
+    retention_days: int = Field(default=180, ge=1)
+    max_total_gb: float = Field(default=50.0, gt=0.0)
+    protect_unreviewed: bool = True
+    cleanup_interval_s: int = Field(default=3600, ge=60)
 
 
 class OfflineAnalysisConfig(BaseModel):

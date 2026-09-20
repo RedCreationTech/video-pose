@@ -7,6 +7,7 @@ from typing import Any
 
 from .async_evidence import AsyncLiveEvidenceRecorder
 from .camera_preview import EncodedSnapshot, encode_jpeg
+from .evidence_retention import EvidenceRetentionManager, EvidenceRetentionPolicy
 from .live_capture_factory import build_live_camera_factory
 from .live_evidence import LiveEvidenceBuffer, OpenCVJPEGEncoder
 from .live_gateway import ThreadedLiveGateway
@@ -202,6 +203,27 @@ class PersistentCameraHub:
             else None
         )
 
+    def mark_evidence_reviewed(
+        self,
+        session_id: str,
+        *,
+        rule_id: str,
+        step_code: str,
+        event_id: str,
+        status: str,
+        reviewed_at: str | None,
+    ) -> str | None:
+        if self.evidence is None:
+            return None
+        return self.evidence.mark_reviewed(
+            session_id,
+            rule_id=rule_id,
+            step_code=step_code,
+            event_id=event_id,
+            status=status,
+            reviewed_at=reviewed_at,
+        )
+
     def evidence_file(
         self,
         session_id: str,
@@ -270,9 +292,25 @@ def build_persistent_camera_hub(
     )
     evidence = None
     if config.config.evidence.enabled:
+        evidence_root = config.resolve(config.config.evidence.root)
+        retention = EvidenceRetentionManager(
+            evidence_root,
+            EvidenceRetentionPolicy(
+                retention_days=config.config.evidence.retention_days,
+                max_total_bytes=round(
+                    config.config.evidence.max_total_gb
+                    * 1024
+                    * 1024
+                    * 1024
+                ),
+                protect_unreviewed=(
+                    config.config.evidence.protect_unreviewed
+                ),
+            ),
+        )
         evidence = AsyncLiveEvidenceRecorder(
             LiveEvidenceBuffer(
-                root=config.resolve(config.config.evidence.root),
+                root=evidence_root,
                 encoder=OpenCVJPEGEncoder(
                     quality=config.config.evidence.jpeg_quality
                 ),
@@ -287,6 +325,10 @@ def build_persistent_camera_hub(
                 max_pending=config.config.evidence.max_pending,
             ),
             queue_size=config.config.evidence.worker_queue_size,
+            retention=retention,
+            cleanup_interval_s=(
+                config.config.evidence.cleanup_interval_s
+            ),
         )
     return PersistentCameraHub(
         manifest=manifest,
