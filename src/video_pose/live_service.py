@@ -49,7 +49,6 @@ def create_live_app(
         runtime,
         event_broker,
         Response,
-        WebSocket,
         WebSocketDisconnect,
         JSONResponse,
     )
@@ -110,7 +109,6 @@ def create_managed_live_app(
         controller,
         event_broker,
         Response,
-        WebSocket,
         WebSocketDisconnect,
         JSONResponse,
     )
@@ -213,7 +211,6 @@ def _register_runtime_routes(
     provider: Any,
     event_broker: LiveEventBroker,
     Response: Any,
-    WebSocket: Any,
     WebSocketDisconnect: Any,
     JSONResponse: Any,
 ) -> None:

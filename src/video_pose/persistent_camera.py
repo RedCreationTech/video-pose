@@ -11,7 +11,7 @@ from .live_gateway import ThreadedLiveGateway
 from .live_health import LiveHealthRegistry, LiveHealthSnapshot
 from .live_video import LiveFrameSynchronizer, MemoryFrameStore
 from .runtime_config import LoadedAnalysisConfig
-from .video_manifest import CameraPosition, ReplayManifest, load_manifest
+from .video_manifest import ReplayManifest, load_manifest
 from .video_replay import SynchronizedFrameSet
 
 
@@ -141,7 +141,9 @@ class PersistentCameraHub:
             None,
         )
         if frame_ref is None:
-            raise KeyError(f"camera is not present in latest frame set: {camera_id}")
+            raise KeyError(
+                f"camera is not present in latest frame set: {camera_id}"
+            )
 
         frame = self.frame_store.load(frame_ref)
         return encode_jpeg(
