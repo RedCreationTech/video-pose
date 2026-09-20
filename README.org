@@ -3,7 +3,7 @@
 
 * 当前阶段
 
-当前代码实现第一个可执行闭环:
+当前代码实现第一个可执行闭环, 并加入四路 Replay Manifest 与时间同步基础能力:
 
 #+BEGIN_SRC text
 Replay JSONL
@@ -33,6 +33,15 @@ pytest
 video-pose-replay \
   --events fixtures/replay/wrong-tool.jsonl \
   --rules fixtures/rules/assembly-a.yaml
+#+END_SRC
+
+* 四路录像 Manifest
+
+#+BEGIN_SRC sh
+python - <<'PY2'
+from video_pose.video_manifest import load_manifest
+print(load_manifest("fixtures/replay/session-manifest.yaml"))
+PY2
 #+END_SRC
 
 * 文档

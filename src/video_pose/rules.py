@@ -41,7 +41,10 @@ class RuleEngine:
         return cls(RuleSet.model_validate(payload))
 
     def evaluate(self, events: Iterable[ActionEvent]) -> ReplayResult:
-        ordered = sorted(events, key=lambda item: (item.sequence, item.started_at_ms, item.event_id))
+        ordered = sorted(
+            events,
+            key=lambda item: (item.sequence, item.started_at_ms, item.event_id),
+        )
         if not ordered:
             raise ValueError("at least one action event is required")
 

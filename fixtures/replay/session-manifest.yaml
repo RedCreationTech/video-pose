@@ -1,0 +1,20 @@
+session_id: demo-four-view
+workstation_id: ws-001
+sync_tolerance_ms: 20
+cameras:
+  - camera_id: cam-front
+    position: FRONT
+    uri: data/demo/front.mp4
+    clock_offset_ms: 0
+  - camera_id: cam-rear
+    position: REAR
+    uri: data/demo/rear.mp4
+    clock_offset_ms: 3.2
+  - camera_id: cam-left
+    position: LEFT
+    uri: data/demo/left.mp4
+    clock_offset_ms: -2.1
+  - camera_id: cam-right
+    position: RIGHT
+    uri: data/demo/right.mp4
+    clock_offset_ms: 1.6

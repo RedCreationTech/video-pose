@@ -123,7 +123,10 @@ class RuleSet(BaseModel):
         for step in self.steps:
             missing = set(step.predecessors) - known
             if missing:
-                raise ValueError(f"step {step.code} references missing predecessors: {sorted(missing)}")
+                detail = sorted(missing)
+                raise ValueError(
+                    f"step {step.code} references missing predecessors: {detail}"
+                )
         for rule in self.rules:
             if rule.step not in known:
                 raise ValueError(f"rule {rule.id} references missing step: {rule.step}")
