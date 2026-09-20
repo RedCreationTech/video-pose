@@ -1,59 +1,60 @@
 #+TITLE: Video Pose Debug Overlay
-#+SUBTITLE: 感知, 关系和动作链路的可视化调试设计
+#+SUBTITLE: 四路调试视频与 Pipeline Trace
 #+AUTHOR: RedCreationTech
 #+DATE: 2026-09-20
 
 * 1. 目的
 
-CV 系统现场调试必须能够区分错误发生在哪一层:
+现场调试需要快速判断问题属于:
 
-#+BEGIN_SRC text
-Detection
-Tracking
-Pose
-World Projection
-Relation
-Action
-Rule
+- Detection.
+- Tracking.
+- Pose.
+- World Projection.
+- Relation.
+- Action.
+- Rule.
+
+* 2. FrameTrace
+
+=process_with_trace= 为每个同步 FrameSet 保存:
+
+- observations.
+- actions.
+- 原始 FrameRef.
+
+* 3. Debug Video
+
+#+BEGIN_SRC sh
+video-pose-analyze \
+  --config configs/offline-demo.yaml \
+  --debug-overlay-dir output/debug \
+  --output result.json
 #+END_SRC
 
-因此 Pipeline 增加 =process_with_trace=, 每个同步 FrameSet 保存:
-
-- fused observations.
-- action events.
-
-* 2. OverlayPrimitive
-
-核心层只生成:
-
-- BOX.
-- POINT.
-- TEXT.
-
-不直接依赖 OpenCV.
-
-* 3. OpenCV Renderer
-
-可选 adapter:
+输出:
 
 #+BEGIN_SRC text
-src/video_pose/adapters/opencv_overlay.py
+front-debug.mp4
+rear-debug.mp4
+left-debug.mp4
+right-debug.mp4
 #+END_SRC
 
-可以绘制:
+当前 Overlay 包含:
 
 - person/tool/object bbox.
 - entity id.
 - confidence.
-- wrist/body keypoint.
+- body/wrist keypoint.
 - HELD_BY/NEAR/FREE.
 - Zone relation.
+- ActionEvent.
 
-后续继续加入:
+下一版增加:
 
-- skeleton line.
-- world coordinate.
+- skeleton bone lines.
+- world coordinates.
 - active SOP step.
-- violation.
-- action event timeline.
-- four-view overlay video writer.
+- violation banner.
+- 2x2 debug mosaic.

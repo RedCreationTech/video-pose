@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .adapters.ffmpeg_evidence import EvidenceArtifact, FFmpegEvidenceWriter
+from .debug_video import OpenCVDebugVideoWriter
 from .evidence import EvidencePlanner
 from .offline_runtime import build_offline_runtime
 from .runtime_config import load_analysis_config
@@ -27,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence-dir",
         help="Render violation evidence clips into this directory",
     )
+    parser.add_argument(
+        "--debug-overlay-dir",
+        help="Render four per-camera debug overlay videos",
+    )
     return parser
 
 
@@ -43,6 +48,7 @@ def _serialize(
     actions: list[Any],
     evaluation: Any | None,
     evidence: list[EvidenceArtifact],
+    debug_videos: dict[str, str],
 ) -> dict[str, Any]:
     return {
         "actions": [
@@ -54,6 +60,7 @@ def _serialize(
             else None
         ),
         "evidence": [_artifact_dict(item) for item in evidence],
+        "debug_videos": debug_videos,
     }
 
 
@@ -61,13 +68,27 @@ def main() -> int:
     args = build_parser().parse_args()
     loaded = load_analysis_config(args.config)
     evidence_artifacts: list[EvidenceArtifact] = []
+    debug_videos: dict[str, str] = {}
 
     with build_offline_runtime(loaded) as runtime:
         frame_sets = runtime.planner.plan()
         if args.max_frame_sets is not None:
             frame_sets = frame_sets[: args.max_frame_sets]
-        actions = runtime.pipeline.process(frame_sets)
+
+        traces = runtime.pipeline.process_with_trace(frame_sets)
+        actions = [
+            action
+            for trace in traces
+            for action in trace.actions
+        ]
         evaluation = runtime.rule_engine.evaluate(actions) if actions else None
+
+        if args.debug_overlay_dir:
+            debug_videos = OpenCVDebugVideoWriter().write(
+                traces,
+                frame_loader=runtime.frame_loader,
+                output_dir=args.debug_overlay_dir,
+            )
 
         if args.evidence_dir and evaluation is not None:
             planner = EvidencePlanner(
@@ -80,7 +101,12 @@ def main() -> int:
                 for plan in planner.plan(actions, evaluation)
             ]
 
-    payload = _serialize(actions, evaluation, evidence_artifacts)
+    payload = _serialize(
+        actions,
+        evaluation,
+        evidence_artifacts,
+        debug_videos,
+    )
     rendered = json.dumps(payload, indent=2, ensure_ascii=False)
     if args.output:
         Path(args.output).write_text(rendered + "\n", encoding="utf-8")
