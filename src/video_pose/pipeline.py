@@ -6,13 +6,8 @@ from typing import Protocol
 from .contracts import ActionEvent
 from .fusion import fuse_observations
 from .observations import Observation
+from .perception import PerceptionAdapter
 from .video_replay import SynchronizedFrameSet
-
-
-class PerceptionAdapter(Protocol):
-    """Model boundary. Implementations may use YOLO, RTMPose or remote inference."""
-
-    def infer(self, frame_set: SynchronizedFrameSet) -> list[Observation]: ...
 
 
 class ActionRecognizer(Protocol):

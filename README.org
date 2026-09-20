@@ -3,14 +3,18 @@
 
 * 当前阶段
 
-当前代码已经形成三层可执行闭环:
+当前代码已经形成可替换模型的视频分析骨架:
 
 #+BEGIN_SRC text
 4-View Video Timeline
    |
+ReplayPlanner
+   |
 Synchronized FrameSet
    |
-PerceptionAdapter
+FrameLoader
+   |
+CameraPerceptionModel
    |
 Observation
    |
@@ -25,8 +29,8 @@ Rule Engine
 Step State + Violation
 #+END_SRC
 
-真实 AI 模型被限制在 =PerceptionAdapter= 边界. YOLO, RTMPose, 手部模型或远程
-推理服务都可以替换, 而 Observation, ActionEvent 和 Rule Engine 契约保持稳定.
+=FrameLoader= 与 =CameraPerceptionModel= 分离. 因此同一个模型后续可以复用在
+离线 MP4, 本地录像和实时视频源上.
 
 * 快速开始
 
@@ -40,7 +44,7 @@ video-pose-replay \
   --rules fixtures/rules/assembly-a.yaml
 #+END_SRC
 
-* 四路录像 Manifest
+* 四路录像 Replay
 
 =ReplayPlanner= 使用 ffprobe 获取真实帧时间戳, 应用每个摄像头的时钟修正值,
 然后根据 =sync_tolerance_ms= 生成四路同步 FrameSet.
@@ -56,6 +60,23 @@ frame_sets = planner.plan()
 
 Manifest 中的 =clock_offset_ms= 定义为需要加到源时间戳上的校正量.
 
+* 模型适配边界
+
+核心模型接口:
+
+#+BEGIN_SRC python
+class CameraPerceptionModel:
+    def infer(self, frame, *, session_id):
+        ...
+#+END_SRC
+
+模型输出统一为 =Observation=. =MultiViewPerceptionAdapter= 负责四路调用和
+契约校验.
+
+离线 MP4 已提供可选的 =OpenCVFileFrameLoader=. 该模块使用惰性 import,
+因此核心规则和 Replay 测试无需安装 OpenCV. 实时 RTSP/GStreamer Loader
+将在 Video Gateway 阶段实现.
+
 * Observation Replay
 
 #+BEGIN_SRC python
@@ -67,9 +88,6 @@ result = run_observation_replay(
 )
 print(result.model_dump_json(indent=2))
 #+END_SRC
-
-PICK/PLACE recognizer 是可解释 baseline. 后续 Temporal Model 只需要产出相同
-=ActionEvent= 契约, 不需要改写 Rule Engine.
 
 * 文档
 
