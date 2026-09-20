@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
     REACH = "REACH"
     GRASP = "GRASP"
     RELEASE = "RELEASE"
@@ -24,7 +24,7 @@ class ActionType(str, Enum):
     WAIT = "WAIT"
 
 
-class StepState(str, Enum):
+class StepState(StrEnum):
     PENDING = "PENDING"
     READY = "READY"
     ACTIVE = "ACTIVE"
@@ -35,14 +35,14 @@ class StepState(str, Enum):
     CANCELLED = "CANCELLED"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     INFO = "INFO"
     MINOR = "MINOR"
     MAJOR = "MAJOR"
     CRITICAL = "CRITICAL"
 
 
-class Decision(str, Enum):
+class Decision(StrEnum):
     TRUE = "TRUE"
     FALSE = "FALSE"
     UNKNOWN = "UNKNOWN"

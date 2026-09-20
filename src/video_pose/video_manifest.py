@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
 
-class CameraPosition(str, Enum):
+class CameraPosition(StrEnum):
     FRONT = "FRONT"
     REAR = "REAR"
     LEFT = "LEFT"
