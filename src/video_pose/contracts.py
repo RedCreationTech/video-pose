@@ -90,6 +90,19 @@ class StepDefinition(BaseModel):
     predecessors: list[str] = Field(default_factory=list)
     min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
     required: bool = True
+    min_duration_ms: int | None = Field(default=None, ge=0)
+    max_duration_ms: int | None = Field(default=None, ge=0)
+    temporal_severity: Severity = Severity.MINOR
+
+    @model_validator(mode="after")
+    def validate_duration_range(self) -> StepDefinition:
+        if (
+            self.min_duration_ms is not None
+            and self.max_duration_ms is not None
+            and self.min_duration_ms > self.max_duration_ms
+        ):
+            raise ValueError("min_duration_ms must be <= max_duration_ms")
+        return self
 
 
 class ViolationDefinition(BaseModel):
@@ -129,7 +142,9 @@ class RuleSet(BaseModel):
                 )
         for rule in self.rules:
             if rule.step not in known:
-                raise ValueError(f"rule {rule.id} references missing step: {rule.step}")
+                raise ValueError(
+                    f"rule {rule.id} references missing step: {rule.step}"
+                )
         return self
 
 

@@ -57,7 +57,9 @@ class RuleEngine:
             steps={
                 step.code: StepResult(
                     code=step.code,
-                    state=StepState.READY if not step.predecessors else StepState.PENDING,
+                    state=StepState.READY
+                    if not step.predecessors
+                    else StepState.PENDING,
                 )
                 for step in self.rule_set.steps
             },
@@ -113,27 +115,31 @@ class RuleEngine:
                 return
 
             mismatch = self._step_mismatch(step, event)
-            if mismatch is None:
-                state.steps[step.code] = StepResult(
-                    code=step.code,
-                    state=StepState.COMPLETED,
-                    event_id=event.event_id,
-                    confidence=event.confidence,
-                )
-                return
+            if mismatch is not None:
+                rule = self._matching_rule(step, event)
+                if rule is not None:
+                    state.steps[step.code] = StepResult(
+                        code=step.code,
+                        state=StepState.VIOLATED,
+                        event_id=event.event_id,
+                        confidence=event.confidence,
+                    )
+                    state.violations.append(
+                        self._violation_from(rule, event, step, mismatch)
+                    )
+                    return
+                continue
 
-            rule = self._matching_rule(step, event)
-            if rule is not None:
-                state.steps[step.code] = StepResult(
-                    code=step.code,
-                    state=StepState.VIOLATED,
-                    event_id=event.event_id,
-                    confidence=event.confidence,
-                )
-                state.violations.append(
-                    self._violation_from(rule, event, step, mismatch)
-                )
-                return
+            state.steps[step.code] = StepResult(
+                code=step.code,
+                state=StepState.COMPLETED,
+                event_id=event.event_id,
+                confidence=event.confidence,
+            )
+            temporal = self._temporal_violation(step, event)
+            if temporal is not None:
+                state.violations.append(temporal)
+            return
 
     def _record_out_of_order(
         self,
@@ -188,6 +194,54 @@ class RuleEngine:
             )
             return
 
+    def _temporal_violation(
+        self,
+        step: StepDefinition,
+        event: ActionEvent,
+    ) -> Violation | None:
+        if step.min_duration_ms is None and step.max_duration_ms is None:
+            return None
+
+        duration_ms = (
+            event.ended_at_ms - event.started_at_ms
+            if event.ended_at_ms is not None
+            else None
+        )
+        reason: str | None = None
+        if duration_ms is None:
+            reason = "duration_unavailable"
+        elif (
+            step.min_duration_ms is not None
+            and duration_ms < step.min_duration_ms
+        ):
+            reason = "too_short"
+        elif (
+            step.max_duration_ms is not None
+            and duration_ms > step.max_duration_ms
+        ):
+            reason = "too_long"
+
+        if reason is None:
+            return None
+
+        return Violation(
+            rule_id=f"AUTO-TEMPORAL-{step.code}",
+            step=step.code,
+            type="TEMPORAL",
+            severity=step.temporal_severity,
+            message=f"step {step.code} duration is outside configured range",
+            event_id=event.event_id,
+            confidence=event.confidence,
+            expected={
+                "min_duration_ms": step.min_duration_ms,
+                "max_duration_ms": step.max_duration_ms,
+            },
+            actual={
+                "duration_ms": duration_ms,
+                "reason": reason,
+            },
+        )
+
     def _step_mismatch(self, step: StepDefinition, event: ActionEvent) -> str | None:
         actual_object = event.object.class_name if event.object else None
         checks = (
@@ -200,15 +254,28 @@ class RuleEngine:
                 return field
         return None
 
-    def _matching_rule(self, step: StepDefinition, event: ActionEvent) -> RuleDefinition | None:
+    def _matching_rule(
+        self,
+        step: StepDefinition,
+        event: ActionEvent,
+    ) -> RuleDefinition | None:
         actual_object = event.object.class_name if event.object else None
         for rule in self._rules_by_action.get(event.action.value, []):
             if rule.step != step.code:
                 continue
             mismatched = (
-                (rule.object_class is not None and actual_object != rule.object_class)
-                or (rule.source_zone is not None and event.source_zone != rule.source_zone)
-                or (rule.target_zone is not None and event.target_zone != rule.target_zone)
+                (
+                    rule.object_class is not None
+                    and actual_object != rule.object_class
+                )
+                or (
+                    rule.source_zone is not None
+                    and event.source_zone != rule.source_zone
+                )
+                or (
+                    rule.target_zone is not None
+                    and event.target_zone != rule.target_zone
+                )
             )
             if mismatched:
                 return rule
@@ -241,7 +308,11 @@ class RuleEngine:
             message=rule.violation.message,
             event_id=event.event_id,
             confidence=event.confidence,
-            expected={key: value for key, value in expected.items() if value is not None},
+            expected={
+                key: value
+                for key, value in expected.items()
+                if value is not None
+            },
             actual=actual,
         )
 

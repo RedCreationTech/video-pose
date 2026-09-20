@@ -1,0 +1,1 @@
+{"event_id":"ok","session_id":"timing-ok","sequence":1,"action":"OPERATE_TOOL","object":{"id":"tool-1","class":"torque_wrench"},"target_zone":"assembly_zone","started_at_ms":1000,"ended_at_ms":1800,"confidence":0.95}

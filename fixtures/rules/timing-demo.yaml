@@ -1,0 +1,11 @@
+operation: timing_demo
+version: 1
+steps:
+  - code: S010
+    name: 执行工具操作
+    action: OPERATE_TOOL
+    object_class: torque_wrench
+    target_zone: assembly_zone
+    min_duration_ms: 500
+    max_duration_ms: 2000
+    temporal_severity: MINOR
