@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "video-pose"
 version = "0.1.0"
 description = "Multi-view action compliance detection core for Video Pose"
-readme = "README.org"
+readme = {file = "README.org", content-type = "text/plain"}
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.8,<3",
