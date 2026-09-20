@@ -1,0 +1,397 @@
+#+TITLE: Video Pose AI System Architecture
+#+SUBTITLE: C4 Model Design for Human Action Compliance Detection Platform
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 系统概述
+
+本系统用于通过多摄像头视频分析持续检测人员动作规范性。
+
+核心目标:
+
+- 通过前后左右四路摄像头采集操作过程
+- 对人员姿态, 手部动作, 工具和对象进行识别
+- 根据标准作业流程判断动作是否符合规范
+- 自动生成评分, 异常记录和复盘视频
+
+系统定位:
+
+#+BEGIN_SRC text
+Video Input
+    |
+Pose Understanding
+    |
+Action Understanding
+    |
+Process Compliance Engine
+    |
+Quality Assessment
+#+END_SRC
+
+* 2. C4 Level 1: System Context
+
+** 系统边界
+
+#+BEGIN_SRC text
++----------------+
+| Operator       |
+| 操作人员       |
++-------+--------+
+        |
+        | performs operation
+        v
++--------------------------------+
+| Video Pose AI Platform         |
+| 动作规范检测平台               |
++--------------------------------+
+        |
+        +----------------+
+        |                |
+        v                v
++-------------+    +-------------+
+| Supervisor  |    | Training    |
+| 管理人员    |    | System      |
++-------------+    +-------------+
+#+END_SRC
+
+** 外部系统
+
+| 系统 | 作用 |
+|-----+------|
+| 摄像头系统 | 视频采集 |
+| MES | 获取工艺任务 |
+| PLM | 获取标准流程 |
+| 人员系统 | 获取人员信息 |
+| 数据平台 | 数据分析 |
+
+* 3. C4 Level 2: Container Diagram
+
+#+BEGIN_SRC text
+                 Web Dashboard
+                      |
+                      v
++------------------------------------------------+
+| Video Pose AI Platform                         |
+|                                                |
+|  +-------------+      +-------------------+    |
+|  | Video       | ---> | AI Perception     |    |
+|  | Gateway     |      | Service           |    |
+|  +-------------+      +-------------------+    |
+|          |                     |               |
+|          v                     v               |
+|  Camera Manager        Pose Engine             |
+|                              |                 |
+|                              v                 |
+|                     Action Recognition         |
+|                              |                 |
+|                              v                 |
+|                     Rule Engine                |
+|                              |                 |
+|                              v                 |
+|                     Evaluation Service         |
+|                                                |
++------------------------------------------------+
+
+                         |
+                         v
+                    Data Storage
+#+END_SRC
+
+* 4. C4 Level 3: Component Design
+
+** Video Gateway
+
+职责:
+
+- RTSP/ONVIF摄像头连接
+- 视频流管理
+- 时间同步
+- 视频缓存
+
+技术:
+
+- FFmpeg
+- GStreamer
+- WebRTC
+
+** AI Perception Service
+
+负责基础视觉理解。
+
+组件:
+
+*** Person Detector
+
+技术:
+
+- YOLO
+
+输出:
+
+#+BEGIN_SRC json
+{
+ "person_id": "001",
+ "bbox": [100,200,300,500],
+ "confidence":0.98
+}
+#+END_SRC
+
+*** Pose Estimation
+
+输出人体关键点。
+
+推荐:
+
+- RTMPose
+- MediaPipe Pose
+
+*** Object Detection
+
+识别:
+
+- 工具
+- 零件
+- 设备
+
+** Pose Engine
+
+负责:
+
+- 多摄像头融合
+- 2D到3D姿态转换
+- 时间序列平滑
+
+算法:
+
+- VideoPose3D
+- Transformer Pose Model
+
+输入:
+
+#+BEGIN_SRC text
+Camera Frames
+    |
+2D Keypoints
+    |
+3D Skeleton
+#+END_SRC
+
+** Action Recognition Service
+
+负责动作理解。
+
+例如:
+
+#+BEGIN_SRC text
+Pick Tool
+    |
+Move Tool
+    |
+Install Part
+    |
+Check Result
+#+END_SRC
+
+技术:
+
+- Video Transformer
+- SlowFast
+- Temporal CNN
+
+** Rule Engine
+
+工业场景不直接依赖AI判断。
+
+采用:
+
+AI识别 + 工艺规则。
+
+规则模型:
+
+#+BEGIN_SRC json
+{
+ "operation":"assembly",
+ "steps":[
+  {
+   "action":"pick",
+   "object":"screwdriver"
+  },
+  {
+   "action":"install"
+  }
+ ]
+}
+#+END_SRC
+
+** Evaluation Service
+
+输出:
+
+- 操作评分
+- 异常类型
+- 视频片段
+- 改进建议
+
+* 5. 数据模型设计
+
+** Action Session
+
+#+BEGIN_SRC text
+ActionSession
+ |
+ +-- operator
+ +-- workstation
+ +-- task
+ +-- start_time
+ +-- score
+#+END_SRC
+
+** Pose Sequence
+
+保存:
+
+- 时间戳
+- 关键点
+- 三维坐标
+
+** Violation Record
+
+#+BEGIN_SRC text
+Violation
+ |
+ +-- type
+ +-- confidence
+ +-- frame
+ +-- video_clip
+#+END_SRC
+
+* 6. 四摄像头空间模型
+
+摄像头布局:
+
+#+BEGIN_SRC text
+              Rear Camera
+                   |
+                   |
+Left Camera -- Work Area -- Right Camera
+                   |
+                   |
+             Front Camera
+#+END_SRC
+
+处理流程:
+
+#+BEGIN_SRC text
+Camera Calibration
+        |
+Coordinate Transformation
+        |
+3D World Space
+        |
+Human Skeleton
+#+END_SRC
+
+* 7. 部署架构
+
+** Edge Node
+
+运行:
+
+- Video Gateway
+- AI Inference
+- Rule Engine
+
+推荐硬件:
+
+- NVIDIA Jetson Orin
+- Industrial PC + RTX GPU
+
+** Cloud Platform
+
+负责:
+
+- 模型管理
+- 数据分析
+- 报表
+- 模型训练
+
+* 8. MVP开发计划
+
+** Phase 1
+
+目标:
+
+单人, 四摄像头, 单流程检测。
+
+功能:
+
+- 视频采集
+- 人体检测
+- 姿态识别
+- 五步骤动作判断
+- 自动评分
+
+** Phase 2
+
+增加:
+
+- 多人员
+- 复杂动作
+- 工具识别
+- 3D空间分析
+
+** Phase 3
+
+增加:
+
+- AI操作助手
+- 自动培训反馈
+- 工艺优化建议
+
+* 9. 测试方案
+
+** Accuracy Test
+
+指标:
+
+| 项目 | 目标 |
+|-----+------|
+| Person Detection | >95% |
+| Pose Accuracy | >90% |
+| Action Recognition | >90% |
+
+** Performance Test
+
+目标:
+
+- 四路1080P实时分析
+- 延迟 <200ms
+- FPS >=25
+
+** Industrial Scenario Test
+
+覆盖:
+
+- 遮挡
+- 光照变化
+- 手套
+- 防护服
+- 快速动作
+
+* 10. 后续演进方向
+
+Video Pose系统最终演进为工业AI Operator平台:
+
+#+BEGIN_SRC text
+Video
+ |
+Pose
+ |
+Action
+ |
+Process
+ |
+Quality
+ |
+AI Assistant
+#+END_SRC
