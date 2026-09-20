@@ -66,8 +66,13 @@ def create_managed_live_app(
     autostart: bool = False,
 ) -> Any:
     try:
-        from fastapi import FastAPI, HTTPException, Response
-        from fastapi import WebSocket, WebSocketDisconnect
+        from fastapi import (
+            FastAPI,
+            HTTPException,
+            Response,
+            WebSocket,
+            WebSocketDisconnect,
+        )
         from fastapi.responses import JSONResponse
     except ImportError as exc:
         raise RuntimeError(

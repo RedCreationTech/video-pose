@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -19,7 +19,7 @@ from .session_audit import SessionAuditMetadata, SessionAuditWriter
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class ManagedSessionStatus(StrEnum):
