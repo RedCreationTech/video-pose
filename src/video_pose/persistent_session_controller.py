@@ -342,6 +342,26 @@ class PersistentLiveSessionController:
 
         payload = live_update_payload(update)
         self.audit.append_payload(state.session_id, payload)
+        timestamp_ms = update.trace.frame_set.reference_timestamp_ms
+        for rule_update in update.rule_updates:
+            for violation in rule_update.new_violations:
+                evidence_id = self.hub.schedule_evidence(
+                    state.session_id,
+                    violation.model_dump(mode="json"),
+                    timestamp_ms=timestamp_ms,
+                )
+                if evidence_id is not None:
+                    self.audit.append_payload(
+                        state.session_id,
+                        {
+                            "evidence_scheduled": {
+                                "evidence_id": evidence_id,
+                                "rule_id": violation.rule_id,
+                                "step": violation.step,
+                                "event_id": violation.event_id,
+                            }
+                        },
+                    )
         if self.repository is not None:
             self.repository.record_update(state.session_id, payload)
         if callback is not None:
@@ -361,6 +381,18 @@ class PersistentLiveSessionController:
             runtime = self._runtime
 
         final = runtime.stop()
+        latest_frame_set = self.hub.latest_frame_set()
+        final_timestamp_ms = (
+            latest_frame_set.reference_timestamp_ms
+            if latest_frame_set is not None
+            else 0.0
+        )
+        for violation in final.new_violations:
+            self.hub.schedule_evidence(
+                session_id,
+                violation.model_dump(mode="json"),
+                timestamp_ms=final_timestamp_ms,
+            )
         ended_at = _utc_now()
         final_payload = final.model_dump(mode="json")
         self.audit.finish(

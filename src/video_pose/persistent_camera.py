@@ -7,6 +7,7 @@ from typing import Any
 
 from .camera_preview import EncodedSnapshot, encode_jpeg
 from .live_capture_factory import build_live_camera_factory
+from .live_evidence import LiveEvidenceBuffer, OpenCVJPEGEncoder
 from .live_gateway import ThreadedLiveGateway
 from .live_health import LiveHealthRegistry, LiveHealthSnapshot
 from .live_video import LiveFrameSynchronizer, MemoryFrameStore
@@ -25,11 +26,13 @@ class PersistentCameraHub:
         frame_store: MemoryFrameStore,
         health: LiveHealthRegistry,
         gateway: ThreadedLiveGateway,
+        evidence: LiveEvidenceBuffer | None = None,
     ) -> None:
         self.manifest = manifest
         self.frame_store = frame_store
         self.health = health
         self.gateway = gateway
+        self.evidence = evidence
         self._lock = threading.RLock()
         self._subscribers: dict[
             str,
@@ -61,6 +64,8 @@ class PersistentCameraHub:
                 return
             self._running = False
         self.gateway.stop()
+        if self.evidence is not None:
+            self.evidence.flush_pending()
 
     def subscribe(
         self,
@@ -152,12 +157,73 @@ class PersistentCameraHub:
             quality=quality,
         )
 
+    def schedule_evidence(
+        self,
+        session_id: str,
+        violation: dict[str, Any],
+        *,
+        timestamp_ms: float,
+    ) -> str | None:
+        if self.evidence is None:
+            return None
+        return self.evidence.schedule(
+            session_id,
+            violation,
+            timestamp_ms=timestamp_ms,
+        )
+
+    def list_evidence(
+        self,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        if self.evidence is None:
+            return []
+        return [
+            manifest.model_dump(mode="json")
+            for manifest in self.evidence.list_session(session_id)
+        ]
+
+    def evidence_manifest(
+        self,
+        session_id: str,
+        evidence_id: str,
+    ) -> dict[str, Any] | None:
+        if self.evidence is None:
+            return None
+        manifest = self.evidence.get_manifest(session_id, evidence_id)
+        return (
+            manifest.model_dump(mode="json")
+            if manifest is not None
+            else None
+        )
+
+    def evidence_file(
+        self,
+        session_id: str,
+        evidence_id: str,
+        camera_id: str,
+        filename: str,
+    ) -> bytes:
+        if self.evidence is None:
+            raise LookupError("live evidence is disabled")
+        return self.evidence.read_file(
+            session_id,
+            evidence_id,
+            camera_id,
+            filename,
+        )
+
     def latest_frame_set(self) -> SynchronizedFrameSet | None:
         with self._lock:
             return self._latest_frame_set
 
     def _publish(self, frame_set: SynchronizedFrameSet) -> None:
         self.health.frame_set_received()
+        if self.evidence is not None:
+            try:
+                self.evidence.ingest(frame_set, self.frame_store)
+            except Exception:
+                self.health.processing_error()
         with self._lock:
             self._latest_frame_set = frame_set
             callbacks = list(self._subscribers.values())
@@ -172,7 +238,7 @@ def build_persistent_camera_hub(
     config: LoadedAnalysisConfig,
     *,
     processing_queue_size: int = 2,
-    max_frame_store: int = 1024,
+    max_frame_store: int = 64,
 ) -> PersistentCameraHub:
     manifest = load_manifest(config.resolve(config.config.manifest))
     frame_store = MemoryFrameStore(max_frames=max_frame_store)
@@ -197,9 +263,27 @@ def build_persistent_camera_hub(
             config.config.live,
         ),
     )
+    evidence = None
+    if config.config.evidence.enabled:
+        evidence = LiveEvidenceBuffer(
+            root=config.resolve(config.config.evidence.root),
+            encoder=OpenCVJPEGEncoder(
+                quality=config.config.evidence.jpeg_quality
+            ),
+            camera_ids=[
+                camera.camera_id
+                for camera in manifest.cameras
+                if camera.enabled
+            ],
+            pre_roll_ms=config.config.evidence.pre_roll_ms,
+            post_roll_ms=config.config.evidence.post_roll_ms,
+            sample_interval_ms=config.config.evidence.sample_interval_ms,
+            max_pending=config.config.evidence.max_pending,
+        )
     return PersistentCameraHub(
         manifest=manifest,
         frame_store=frame_store,
         health=health,
         gateway=gateway,
+        evidence=evidence,
     )

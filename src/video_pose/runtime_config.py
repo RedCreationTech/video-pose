@@ -73,6 +73,16 @@ class LiveCaptureRuntimeConfig(BaseModel):
     decoder_element: str | None = None
 
 
+class EvidenceRuntimeConfig(BaseModel):
+    enabled: bool = False
+    root: str = "../output/evidence"
+    pre_roll_ms: int = Field(default=3000, ge=0)
+    post_roll_ms: int = Field(default=3000, ge=0)
+    sample_interval_ms: int = Field(default=200, ge=1)
+    jpeg_quality: int = Field(default=70, ge=1, le=100)
+    max_pending: int = Field(default=32, ge=1)
+
+
 class OfflineAnalysisConfig(BaseModel):
     manifest: str
     rules: str
@@ -90,6 +100,9 @@ class OfflineAnalysisConfig(BaseModel):
     )
     live: LiveCaptureRuntimeConfig = Field(
         default_factory=LiveCaptureRuntimeConfig
+    )
+    evidence: EvidenceRuntimeConfig = Field(
+        default_factory=EvidenceRuntimeConfig
     )
     action_min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
 

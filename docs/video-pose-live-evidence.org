@@ -1,0 +1,74 @@
+#+TITLE: Video Pose Live Evidence Buffer
+#+SUBTITLE: 压缩环形缓存, Pre/Post Roll 与可校验证据 Manifest
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. 目标
+
+实时违规不能依赖 RTSP 回看能力. 系统在边缘节点维护压缩证据环形缓冲.
+
+#+BEGIN_SRC text
+SynchronizedFrameSet
+       |
+JPEG sampling, default 5 FPS
+       |
+compressed rolling buffer
+       |
+Violation
+       |
+pre-roll + post-roll capture
+       |
+session/evidence/camera/*.jpg
+       |
+manifest.json + SHA-256
+#+END_SRC
+
+* 2. 内存策略
+
+普通 FrameStore 只服务实时推理和 Camera Snapshot, 默认从 1024 原始帧降低到 64.
+
+历史证据单独使用 JPEG 压缩缓冲, 避免把大量 1080P BGR 图像长期堆在 RAM 中.
+
+* 3. 默认窗口
+
+- pre-roll: 3000 ms.
+- post-roll: 3000 ms.
+- sample interval: 200 ms, 即约 5 FPS.
+- JPEG quality: 70.
+
+所有参数可在 =evidence= 配置块调整.
+
+* 4. 证据身份
+
+Evidence ID 使用:
+
+#+BEGIN_SRC text
+session_id + rule_id + step_code + event_id
+#+END_SRC
+
+计算稳定 SHA-256 前缀, 同一违规不会重复生成多个证据包.
+
+* 5. Manifest
+
+每个文件记录:
+
+- camera_id.
+- normalized timestamp.
+- filename.
+- SHA-256.
+- size.
+
+证据包状态:
+
+- COMPLETE, 所有预期摄像头都有图像.
+- PARTIAL, 服务关闭或摄像头缺失时保留已有证据.
+
+* 6. 下一步
+
+下一阶段通过 API 提供:
+
+- session evidence list.
+- evidence manifest.
+- protected evidence image download.
+
+并与人工违规复核页关联.
