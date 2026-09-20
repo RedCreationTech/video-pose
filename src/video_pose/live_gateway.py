@@ -11,7 +11,7 @@ from .video_replay import SynchronizedFrameSet
 
 
 class OpenCVLiveCamera:
-    """Minimal RTSP/video live reader using capture time as the source clock."""
+    """Minimal RTSP/video reader using monotonic capture time."""
 
     def __init__(self, camera_id: str, uri: str) -> None:
         self.camera_id = camera_id
@@ -117,6 +117,7 @@ class ThreadedLiveGateway:
                 if frame_set is not None and self._callback is not None:
                     self._callback(frame_set)
             except Exception:
+                camera.close()
                 if self._stop.is_set():
                     return
                 time.sleep(0.1)

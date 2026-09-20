@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-pose"
-version = "0.7.0"
+version = "0.8.0"
 description = "Multi-view action compliance detection core for Video Pose"
 readme = {file = "README.org", content-type = "text/plain"}
 requires-python = ">=3.11"
@@ -32,6 +32,7 @@ mmpose = [
 [project.scripts]
 video-pose-replay = "video_pose.cli:main"
 video-pose-analyze = "video_pose.analyze_cli:main"
+video-pose-live = "video_pose.live_cli:main"
 video-pose-doctor = "video_pose.doctor_cli:main"
 video-pose-calibrate = "video_pose.calibration_cli:main"
 video-pose-evaluate = "video_pose.evaluate_cli:main"

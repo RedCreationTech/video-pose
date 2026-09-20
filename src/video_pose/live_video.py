@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -10,7 +11,7 @@ from .video_replay import FrameRef, SynchronizedFrameSet
 
 
 class MemoryFrameStore:
-    """Bounded in-memory frame store implementing the FrameLoader contract."""
+    """Bounded thread-safe in-memory FrameLoader for live camera pixels."""
 
     def __init__(self, max_frames: int = 1024) -> None:
         if max_frames < 4:
@@ -18,6 +19,7 @@ class MemoryFrameStore:
         self.max_frames = max_frames
         self._frames: dict[str, Any] = {}
         self._order: deque[str] = deque()
+        self._lock = threading.Lock()
 
     def put(
         self,
@@ -27,17 +29,20 @@ class MemoryFrameStore:
         image: Any,
     ) -> str:
         uri = f"memory://{camera_id}/{sequence}"
-        self._frames[uri] = image
-        self._order.append(uri)
-        while len(self._order) > self.max_frames:
-            expired = self._order.popleft()
-            self._frames.pop(expired, None)
+        with self._lock:
+            self._frames[uri] = image
+            self._order.append(uri)
+            while len(self._order) > self.max_frames:
+                expired = self._order.popleft()
+                self._frames.pop(expired, None)
         return uri
 
     def load(self, ref: FrameRef) -> DecodedFrame:
-        if ref.uri not in self._frames:
-            raise KeyError(f"live frame expired or missing: {ref.uri}")
-        return DecodedFrame(ref=ref, image=self._frames[ref.uri])
+        with self._lock:
+            if ref.uri not in self._frames:
+                raise KeyError(f"live frame expired or missing: {ref.uri}")
+            image = self._frames[ref.uri]
+        return DecodedFrame(ref=ref, image=image)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,12 +85,27 @@ class LiveFrameSynchronizer:
             camera_id: deque(maxlen=max_buffer_frames)
             for camera_id in self._camera_by_id
         }
-        self._sequences: dict[str, int] = {
+        self._sequences = {
             camera_id: 0 for camera_id in self._camera_by_id
         }
         self._last_emitted_reference_ms = -1.0
+        self._lock = threading.Lock()
 
     def push(
+        self,
+        *,
+        camera_id: str,
+        source_timestamp_ms: float,
+        image: Any,
+    ) -> SynchronizedFrameSet | None:
+        with self._lock:
+            return self._push_locked(
+                camera_id=camera_id,
+                source_timestamp_ms=source_timestamp_ms,
+                image=image,
+            )
+
+    def _push_locked(
         self,
         *,
         camera_id: str,

@@ -1,4 +1,4 @@
-from video_pose.live_video import MemoryFrameStore, LiveFrameSynchronizer
+from video_pose.live_video import LiveFrameSynchronizer, MemoryFrameStore
 from video_pose.video_manifest import CameraPosition, ReplayManifest
 
 
