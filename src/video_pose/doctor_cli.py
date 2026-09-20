@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 
 from .doctor import build_doctor_report
 

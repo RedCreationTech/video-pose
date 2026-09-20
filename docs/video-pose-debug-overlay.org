@@ -1,0 +1,59 @@
+#+TITLE: Video Pose Debug Overlay
+#+SUBTITLE: 感知, 关系和动作链路的可视化调试设计
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 目的
+
+CV 系统现场调试必须能够区分错误发生在哪一层:
+
+#+BEGIN_SRC text
+Detection
+Tracking
+Pose
+World Projection
+Relation
+Action
+Rule
+#+END_SRC
+
+因此 Pipeline 增加 =process_with_trace=, 每个同步 FrameSet 保存:
+
+- fused observations.
+- action events.
+
+* 2. OverlayPrimitive
+
+核心层只生成:
+
+- BOX.
+- POINT.
+- TEXT.
+
+不直接依赖 OpenCV.
+
+* 3. OpenCV Renderer
+
+可选 adapter:
+
+#+BEGIN_SRC text
+src/video_pose/adapters/opencv_overlay.py
+#+END_SRC
+
+可以绘制:
+
+- person/tool/object bbox.
+- entity id.
+- confidence.
+- wrist/body keypoint.
+- HELD_BY/NEAR/FREE.
+- Zone relation.
+
+后续继续加入:
+
+- skeleton line.
+- world coordinate.
+- active SOP step.
+- violation.
+- action event timeline.
+- four-view overlay video writer.

@@ -3,9 +3,9 @@ from __future__ import annotations
 import importlib.util
 import shutil
 import sys
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable
 
 from pydantic import BaseModel
 
@@ -62,38 +62,6 @@ def _path_check(
         status=CheckStatus.FAIL if required else CheckStatus.WARN,
         required=required,
         detail=f"missing: {path}",
-    )
-
-
-def _module_check(
-    module: str,
-    *,
-    required: bool,
-) -> DoctorCheck:
-    exists = _module_exists(module)
-    return DoctorCheck(
-        name=f"python-module:{module}",
-        status=CheckStatus.PASS if exists else (
-            CheckStatus.FAIL if required else CheckStatus.WARN
-        ),
-        required=required,
-        detail="available" if exists else "not installed",
-    )
-
-
-def _binary_check(
-    binary: str,
-    *,
-    required: bool,
-) -> DoctorCheck:
-    exists = _binary_exists(binary)
-    return DoctorCheck(
-        name=f"binary:{binary}",
-        status=CheckStatus.PASS if exists else (
-            CheckStatus.FAIL if required else CheckStatus.WARN
-        ),
-        required=required,
-        detail=shutil.which(binary) or "not found in PATH",
     )
 
 

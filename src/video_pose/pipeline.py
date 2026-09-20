@@ -9,6 +9,7 @@ from .fusion import fuse_observations
 from .observations import Observation
 from .perception import PerceptionAdapter
 from .processing import ObservationProcessor
+from .trace import FrameTrace
 from .video_replay import SynchronizedFrameSet
 
 
@@ -36,7 +37,18 @@ class VideoPosePipeline:
         self,
         frame_sets: Iterable[SynchronizedFrameSet],
     ) -> list[ActionEvent]:
-        actions: list[ActionEvent] = []
+        traces = self.process_with_trace(frame_sets)
+        return [
+            action
+            for trace in traces
+            for action in trace.actions
+        ]
+
+    def process_with_trace(
+        self,
+        frame_sets: Iterable[SynchronizedFrameSet],
+    ) -> list[FrameTrace]:
+        traces: list[FrameTrace] = []
         for frame_set in frame_sets:
             observations = self.perception.infer(frame_set)
             for processor in self.observation_processors:
@@ -44,5 +56,12 @@ class VideoPosePipeline:
             for enricher in self.observation_enrichers:
                 observations.extend(enricher.enrich(observations))
             fused = fuse_observations(observations)
-            actions.extend(self.action_recognizer.ingest(fused))
-        return actions
+            actions = self.action_recognizer.ingest(fused)
+            traces.append(
+                FrameTrace(
+                    frame_set=frame_set,
+                    observations=tuple(fused),
+                    actions=tuple(actions),
+                )
+            )
+        return traces
