@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from video_pose.persistent_session_controller import (
     PersistentLiveSessionController,
 )
