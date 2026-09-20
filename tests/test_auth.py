@@ -4,8 +4,8 @@ import pytest
 
 from video_pose.auth import (
     AuthConfiguration,
-    AuthManager,
     AuthenticationError,
+    AuthManager,
     AuthorizationError,
     Permission,
     Role,
