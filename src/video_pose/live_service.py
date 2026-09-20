@@ -141,6 +141,10 @@ def create_managed_live_app(
             raise HTTPException(status_code=404, detail="session not found")
         return payload
 
+    @app.get("/api/v1/runtime/persistence")
+    def persistence_health() -> dict[str, Any]:
+        return controller.persistence_health()
+
     @app.post("/api/v1/sessions/{session_id}/stop")
     def stop_session(session_id: str) -> Any:
         try:

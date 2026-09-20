@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-pose"
-version = "0.13.0"
+version = "0.14.0"
 description = "Multi-view action compliance detection core for Video Pose"
 readme = {file = "README.org", content-type = "text/plain"}
 requires-python = ">=3.11"
@@ -20,6 +20,7 @@ dev = [
   "fastapi>=0.115,<1",
   "httpx>=0.28,<1",
   "SQLAlchemy>=2.0.54,<2.1",
+  "alembic>=1.20,<2",
 ]
 api = [
   "fastapi>=0.115,<1",
@@ -27,6 +28,7 @@ api = [
 ]
 db = [
   "SQLAlchemy>=2.0.54,<2.1",
+  "alembic>=1.20,<2",
   "psycopg[binary]>=3.2,<4",
 ]
 video = [
@@ -51,6 +53,8 @@ video-pose-calibrate = "video_pose.calibration_cli:main"
 video-pose-evaluate = "video_pose.evaluate_cli:main"
 video-pose-camera-model = "video_pose.camera_model_cli:main"
 video-pose-calibration-health = "video_pose.calibration_health_cli:main"
+video-pose-db = "video_pose.db_cli:main"
+video-pose-reindex = "video_pose.reindex_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/video_pose"]

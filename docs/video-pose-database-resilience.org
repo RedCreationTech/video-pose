@@ -1,0 +1,86 @@
+#+TITLE: Video Pose Database Migration and Recovery
+#+SUBTITLE: Alembic, Best-effort Query Store and Audit Reindex
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 数据职责
+
+#+BEGIN_SRC text
+JSONL Audit
+  durable source of truth
+       |
+       +----> realtime operation never depends on DB availability
+       |
+Queryable Database
+  sessions/actions/steps/violations
+#+END_SRC
+
+* 2. Migration
+
+生产不再依赖 =metadata.create_all()=.
+
+执行:
+
+#+BEGIN_SRC sh
+video-pose-db \
+  --database-url postgresql+psycopg://user:pass@db/video_pose \
+  upgrade
+#+END_SRC
+
+内部使用 Alembic:
+
+#+BEGIN_SRC text
+base -> 0001_session_repository
+#+END_SRC
+
+* 3. 数据库故障降级
+
+=ResilientSessionStore= 包裹 SQL Repository.
+
+数据库写失败时:
+
+- 不抛回实时检测线程.
+- JSONL audit 继续写.
+- persistence health 变为 DEGRADED.
+- write/read error counter 增加.
+
+查询:
+
+#+BEGIN_SRC text
+GET /api/v1/runtime/persistence
+#+END_SRC
+
+* 4. 恢复与 Reindex
+
+数据库恢复后:
+
+#+BEGIN_SRC sh
+video-pose-reindex \
+  --audit-dir output/sessions \
+  --database-url postgresql+psycopg://user:pass@db/video_pose
+#+END_SRC
+
+可指定单 Session:
+
+#+BEGIN_SRC sh
+--session-id <id>
+#+END_SRC
+
+流程:
+
+1. metadata.json -> vp_sessions.
+2. updates.jsonl -> actions/steps/violations.
+3. final.json -> final status/score.
+
+* 5. 设计原则
+
+实时合规判断优先级高于查询数据库可用性.
+
+PostgreSQL 临时故障不应让:
+
+- Camera Gateway 停止.
+- AI inference 停止.
+- Rule Engine 停止.
+- immutable audit 停止.
+
+数据库是可恢复的查询视图, 不是实时判定的唯一事实源.

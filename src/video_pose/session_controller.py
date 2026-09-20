@@ -180,6 +180,30 @@ class LiveSessionController:
                 return self._runtime.health_snapshot()
         return LiveHealthRegistry([], queue_capacity=0).snapshot()
 
+    def persistence_health(self) -> dict[str, Any]:
+        if self.repository is None:
+            return {
+                "configured": False,
+                "status": "DISABLED",
+            }
+        health_method = getattr(self.repository, "health", None)
+        if callable(health_method):
+            health = health_method()
+            dump_method = getattr(health, "model_dump", None)
+            payload = (
+                dump_method(mode="json")
+                if callable(dump_method)
+                else health
+            )
+            return {
+                "configured": True,
+                **payload,
+            }
+        return {
+            "configured": True,
+            "status": "READY",
+        }
+
     def list_sessions(
         self,
         limit: int = 100,

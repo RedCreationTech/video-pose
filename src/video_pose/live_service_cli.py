@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .live_service import create_managed_live_app
+from .resilient_store import ResilientSessionStore
 from .runtime_config import load_analysis_config
 from .session_controller import LiveSessionController
 
@@ -38,8 +39,9 @@ def main() -> int:
             raise RuntimeError(
                 "database persistence requires the optional 'db' dependencies"
             ) from exc
-        repository = SQLAlchemySessionRepository(args.database_url)
-        repository.create_schema()
+        repository = ResilientSessionStore(
+            SQLAlchemySessionRepository(args.database_url)
+        )
 
     controller = LiveSessionController(
         load_analysis_config(args.config),
