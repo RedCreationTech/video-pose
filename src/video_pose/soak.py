@@ -12,6 +12,8 @@ class SoakThresholds(BaseModel):
     max_camera_read_errors: int = Field(default=100, ge=0)
     max_camera_reconnects: int = Field(default=20, ge=0)
     max_processing_latency_ms: float = Field(default=1000.0, gt=0.0)
+    max_processing_p99_ms: float = Field(default=750.0, gt=0.0)
+    max_rss_growth_mb: float = Field(default=512.0, ge=0.0)
 
 
 class SoakSample(BaseModel):
@@ -31,6 +33,11 @@ class SoakReport(BaseModel):
     camera_read_errors_total: int
     camera_reconnect_total: int
     max_processing_latency_ms: float
+    max_processing_p99_ms: float
+    initial_rss_mb: float | None
+    max_rss_mb: float
+    rss_growth_mb: float
+    max_gpu_reserved_mb: float
     passed: bool
     failures: list[str]
 
@@ -81,6 +88,32 @@ class SoakMonitor:
             ),
             default=0.0,
         )
+        max_p99 = max(
+            (
+                sample.health.runtime.processing_latency_p99_ms
+                for sample in self.samples
+            ),
+            default=0.0,
+        )
+        rss_values = [
+            sample.health.runtime.current_rss_mb
+            for sample in self.samples
+            if sample.health.runtime.current_rss_mb is not None
+        ]
+        initial_rss = rss_values[0] if rss_values else None
+        max_rss = max(rss_values, default=0.0)
+        rss_growth = (
+            max(0.0, max_rss - initial_rss)
+            if initial_rss is not None
+            else 0.0
+        )
+        max_gpu_reserved = max(
+            (
+                sample.health.runtime.max_gpu_reserved_mb
+                for sample in self.samples
+            ),
+            default=0.0,
+        )
 
         failures: list[str] = []
         thresholds = self.thresholds
@@ -118,6 +151,16 @@ class SoakMonitor:
                 f"max_processing_latency_ms={max_latency:.3f} "
                 f"> {thresholds.max_processing_latency_ms:.3f}"
             )
+        if max_p99 > thresholds.max_processing_p99_ms:
+            failures.append(
+                f"max_processing_p99_ms={max_p99:.3f} "
+                f"> {thresholds.max_processing_p99_ms:.3f}"
+            )
+        if rss_growth > thresholds.max_rss_growth_mb:
+            failures.append(
+                f"rss_growth_mb={rss_growth:.3f} "
+                f"> {thresholds.max_rss_growth_mb:.3f}"
+            )
 
         return SoakReport(
             duration_s=self.samples[-1].elapsed_s,
@@ -131,6 +174,11 @@ class SoakMonitor:
             camera_read_errors_total=camera_read_errors,
             camera_reconnect_total=camera_reconnects,
             max_processing_latency_ms=max_latency,
+            max_processing_p99_ms=max_p99,
+            initial_rss_mb=initial_rss,
+            max_rss_mb=max_rss,
+            rss_growth_mb=rss_growth,
+            max_gpu_reserved_mb=max_gpu_reserved,
             passed=not failures,
             failures=failures,
         )

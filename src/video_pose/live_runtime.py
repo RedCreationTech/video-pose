@@ -11,6 +11,7 @@ from .live_health import LiveHealthRegistry, LiveHealthSnapshot
 from .live_video import LiveFrameSynchronizer, MemoryFrameStore
 from .pipeline import VideoPosePipeline
 from .realtime_rules import RealtimeRuleSession, RuleSessionUpdate
+from .resource_usage import sample_process_resources
 from .runtime_builder import build_analysis_pipeline, build_rule_engine
 from .runtime_config import LoadedAnalysisConfig
 from .trace import FrameTrace
@@ -35,9 +36,12 @@ class LiveAnalysisRuntime:
         rule_session: RealtimeRuleSession,
         health: LiveHealthRegistry | None = None,
         processing_queue_size: int = 2,
+        resource_sample_every: int = 30,
     ) -> None:
         if processing_queue_size < 1:
             raise ValueError("processing_queue_size must be >= 1")
+        if resource_sample_every < 1:
+            raise ValueError("resource_sample_every must be >= 1")
         self.gateway = gateway
         self.pipeline = pipeline
         self.rule_session = rule_session
@@ -45,6 +49,8 @@ class LiveAnalysisRuntime:
             [],
             queue_capacity=processing_queue_size,
         )
+        self.resource_sample_every = resource_sample_every
+        self._processed_since_resource_sample = 0
         self._last_timestamp_ms = 0
         self._callback: Callable[[LiveAnalysisUpdate], None] | None = None
         self._queue: queue.Queue[SynchronizedFrameSet] = queue.Queue(
@@ -98,6 +104,7 @@ class LiveAnalysisRuntime:
             raise RuntimeError("live analysis runtime is already running")
         self._callback = callback
         self._stop.clear()
+        self.health.record_resources(sample_process_resources())
         self._worker = threading.Thread(
             target=self._run_processing,
             name="video-pose-inference",
@@ -112,6 +119,7 @@ class LiveAnalysisRuntime:
         if self._worker is not None:
             self._worker.join(timeout=5.0)
             self._worker = None
+        self.health.record_resources(sample_process_resources())
         return self.rule_session.finish(self._last_timestamp_ms)
 
     def health_snapshot(self) -> LiveHealthSnapshot:
@@ -129,6 +137,15 @@ class LiveAnalysisRuntime:
                 update = self.process_frame_set(frame_set)
                 latency_ms = (time.perf_counter() - started) * 1000.0
                 self.health.frame_set_processed(latency_ms)
+                self._processed_since_resource_sample += 1
+                if (
+                    self._processed_since_resource_sample
+                    >= self.resource_sample_every
+                ):
+                    self.health.record_resources(
+                        sample_process_resources()
+                    )
+                    self._processed_since_resource_sample = 0
                 if self._callback is not None:
                     self._callback(update)
             except Exception:

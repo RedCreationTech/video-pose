@@ -28,6 +28,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1000.0,
     )
+    parser.add_argument(
+        "--max-processing-p99-ms",
+        type=float,
+        default=750.0,
+    )
+    parser.add_argument(
+        "--max-rss-growth-mb",
+        type=float,
+        default=512.0,
+    )
     return parser
 
 
@@ -40,6 +50,8 @@ def main() -> int:
         max_camera_read_errors=args.max_camera_read_errors,
         max_camera_reconnects=args.max_camera_reconnects,
         max_processing_latency_ms=args.max_processing_latency_ms,
+        max_processing_p99_ms=args.max_processing_p99_ms,
+        max_rss_growth_mb=args.max_rss_growth_mb,
     )
     monitor = SoakMonitor(thresholds)
     runtime = build_live_runtime(

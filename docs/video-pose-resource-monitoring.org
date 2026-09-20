@@ -1,0 +1,64 @@
+#+TITLE: Video Pose Resource and Tail Latency Monitoring
+#+SUBTITLE: RSS, GPU Memory, P95/P99 and Long-running Leak Detection
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. Runtime Health 新增指标
+
+- processing latency P95.
+- processing latency P99.
+- current/max RSS.
+- current GPU allocated memory.
+- current/max GPU reserved memory.
+
+* 2. 资源采样
+
+LiveAnalysisRuntime:
+
+- start 时采一次.
+- 每处理 30 个 synchronized FrameSet 采一次.
+- stop 时再采一次.
+
+Linux 优先读取 =/proc/self/statm= 获取当前 RSS.
+
+GPU 指标在 PyTorch/CUDA 可用时读取:
+
+#+BEGIN_SRC text
+torch.cuda.memory_allocated()
+torch.cuda.memory_reserved()
+#+END_SRC
+
+* 3. Prometheus
+
+新增:
+
+#+BEGIN_SRC text
+video_pose_processing_latency_p95_ms
+video_pose_processing_latency_p99_ms
+video_pose_process_rss_mb
+video_pose_process_rss_max_mb
+video_pose_gpu_memory_allocated_mb
+video_pose_gpu_memory_reserved_mb
+video_pose_gpu_memory_reserved_max_mb
+#+END_SRC
+
+* 4. Soak Gate
+
+新增默认门槛:
+
+- max P99 latency <= 750 ms.
+- RSS growth <= 512 MB.
+
+RSS growth 用:
+
+#+BEGIN_SRC text
+max sampled RSS - first sampled RSS
+#+END_SRC
+
+用于发现长时间运行后的内存持续增长.
+
+* 5. 注意
+
+当前 latency percentile 使用最近 4096 个处理样本的有界窗口.
+
+后续生产可切换为 Prometheus histogram/OTel histogram, 保持当前指标命名语义.

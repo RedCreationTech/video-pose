@@ -91,6 +91,34 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
                 "video_pose_processing_latency_max_ms",
                 runtime.max_processing_latency_ms,
             ),
+            _metric(
+                "video_pose_processing_latency_p95_ms",
+                runtime.processing_latency_p95_ms,
+            ),
+            _metric(
+                "video_pose_processing_latency_p99_ms",
+                runtime.processing_latency_p99_ms,
+            ),
+            _metric(
+                "video_pose_process_rss_mb",
+                runtime.current_rss_mb or 0.0,
+            ),
+            _metric(
+                "video_pose_process_rss_max_mb",
+                runtime.max_rss_mb,
+            ),
+            _metric(
+                "video_pose_gpu_memory_allocated_mb",
+                runtime.gpu_allocated_mb or 0.0,
+            ),
+            _metric(
+                "video_pose_gpu_memory_reserved_mb",
+                runtime.gpu_reserved_mb or 0.0,
+            ),
+            _metric(
+                "video_pose_gpu_memory_reserved_max_mb",
+                runtime.max_gpu_reserved_mb,
+            ),
         ]
     )
     return "\n".join(lines) + "\n"
