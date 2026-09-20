@@ -22,6 +22,7 @@ from .contracts import (
 class _SessionState:
     steps: dict[str, StepResult]
     violations: list[Violation]
+    order_violation_steps: set[str]
 
 
 class RuleEngine:
@@ -61,6 +62,7 @@ class RuleEngine:
                 for step in self.rule_set.steps
             },
             violations=[],
+            order_violation_steps=set(),
         )
 
         seen_sequences: set[int] = set()
@@ -75,7 +77,10 @@ class RuleEngine:
 
         self._finalize_missing_required_steps(state)
         score = self._score(state.violations)
-        passed = not any(v.severity.value in {"MAJOR", "CRITICAL"} for v in state.violations)
+        passed = not any(
+            violation.severity.value in {"MAJOR", "CRITICAL"}
+            for violation in state.violations
+        )
         return ReplayResult(
             session_id=ordered[0].session_id,
             operation=self.rule_set.operation,
@@ -94,6 +99,7 @@ class RuleEngine:
             and state.steps[step.code].state in {StepState.READY, StepState.ACTIVE}
         ]
         if not candidate_steps:
+            self._record_out_of_order(state, event)
             return
 
         for step in candidate_steps:
@@ -124,8 +130,63 @@ class RuleEngine:
                     event_id=event.event_id,
                     confidence=event.confidence,
                 )
-                state.violations.append(self._violation_from(rule, event, step, mismatch))
+                state.violations.append(
+                    self._violation_from(rule, event, step, mismatch)
+                )
                 return
+
+    def _record_out_of_order(
+        self,
+        state: _SessionState,
+        event: ActionEvent,
+    ) -> None:
+        completed = {
+            code
+            for code, result in state.steps.items()
+            if result.state == StepState.COMPLETED
+        }
+        for step in self.rule_set.steps:
+            if step.action != event.action:
+                continue
+            if state.steps[step.code].state != StepState.PENDING:
+                continue
+            if event.confidence < step.min_confidence:
+                continue
+            if self._step_mismatch(step, event) is not None:
+                continue
+            if step.code in state.order_violation_steps:
+                return
+
+            missing_predecessors = [
+                predecessor
+                for predecessor in step.predecessors
+                if predecessor not in completed
+            ]
+            if not missing_predecessors:
+                continue
+
+            state.order_violation_steps.add(step.code)
+            state.violations.append(
+                Violation(
+                    rule_id=f"AUTO-ORDER-{step.code}",
+                    step=step.code,
+                    type="ORDER",
+                    severity="MAJOR",
+                    message=(
+                        f"step {step.code} occurred before required predecessors"
+                    ),
+                    event_id=event.event_id,
+                    confidence=event.confidence,
+                    expected={
+                        "completed_predecessors": step.predecessors,
+                    },
+                    actual={
+                        "completed_steps": sorted(completed),
+                        "missing_predecessors": missing_predecessors,
+                    },
+                )
+            )
+            return
 
     def _step_mismatch(self, step: StepDefinition, event: ActionEvent) -> str | None:
         actual_object = event.object.class_name if event.object else None
@@ -195,16 +256,26 @@ class RuleEngine:
             if current.state != StepState.PENDING:
                 continue
             if all(predecessor in completed for predecessor in step.predecessors):
-                state.steps[step.code] = StepResult(code=step.code, state=StepState.READY)
+                state.steps[step.code] = StepResult(
+                    code=step.code,
+                    state=StepState.READY,
+                )
 
     def _finalize_missing_required_steps(self, state: _SessionState) -> None:
         for step in self.rule_set.steps:
             result = state.steps[step.code]
             if not step.required:
                 continue
-            if result.state in {StepState.COMPLETED, StepState.VIOLATED, StepState.UNKNOWN}:
+            if result.state in {
+                StepState.COMPLETED,
+                StepState.VIOLATED,
+                StepState.UNKNOWN,
+            }:
                 continue
-            state.steps[step.code] = StepResult(code=step.code, state=StepState.VIOLATED)
+            state.steps[step.code] = StepResult(
+                code=step.code,
+                state=StepState.VIOLATED,
+            )
             state.violations.append(
                 Violation(
                     rule_id=f"AUTO-MISSING-{step.code}",
@@ -221,6 +292,13 @@ class RuleEngine:
 
     @staticmethod
     def _score(violations: list[Violation]) -> float:
-        penalties = {"INFO": 0.0, "MINOR": 2.0, "MAJOR": 10.0, "CRITICAL": 100.0}
-        value = 100.0 - sum(penalties[item.severity.value] for item in violations)
+        penalties = {
+            "INFO": 0.0,
+            "MINOR": 2.0,
+            "MAJOR": 10.0,
+            "CRITICAL": 100.0,
+        }
+        value = 100.0 - sum(
+            penalties[item.severity.value] for item in violations
+        )
         return max(0.0, value)
