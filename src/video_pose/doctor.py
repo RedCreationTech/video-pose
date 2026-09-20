@@ -9,7 +9,12 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from .runtime_config import LoadedAnalysisConfig, load_analysis_config
+from .gstreamer_capture import opencv_has_gstreamer
+from .runtime_config import (
+    CaptureBackend,
+    LoadedAnalysisConfig,
+    load_analysis_config,
+)
 
 
 class CheckStatus(StrEnum):
@@ -106,6 +111,32 @@ def _cuda_check(config: LoadedAnalysisConfig) -> DoctorCheck:
     )
 
 
+def _gstreamer_check(config: LoadedAnalysisConfig) -> DoctorCheck | None:
+    if config.config.live.backend != CaptureBackend.GSTREAMER_OPENCV:
+        return None
+    try:
+        import cv2
+    except ImportError:
+        return DoctorCheck(
+            name="opencv-gstreamer",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail="cv2 is not installed",
+        )
+
+    supported = opencv_has_gstreamer(cv2)
+    return DoctorCheck(
+        name="opencv-gstreamer",
+        status=CheckStatus.PASS if supported else CheckStatus.FAIL,
+        required=True,
+        detail=(
+            "OpenCV GStreamer support is enabled"
+            if supported
+            else "OpenCV build reports GStreamer=NO"
+        ),
+    )
+
+
 def build_doctor_report(
     config_path: str | Path,
     *,
@@ -153,6 +184,10 @@ def build_doctor_report(
                 detail="available" if exists else "not installed",
             )
         )
+
+    gstreamer = _gstreamer_check(loaded)
+    if gstreamer is not None:
+        checks.append(gstreamer)
 
     assets: list[tuple[str, str | None]] = [
         ("manifest", cfg.manifest),

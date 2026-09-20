@@ -1,0 +1,33 @@
+manifest: ../fixtures/replay/session-manifest.yaml
+rules: ../fixtures/rules/pick-place.yaml
+calibration: ../fixtures/calibration/planar-demo.yaml
+zones: ../fixtures/zones/pick-place-front.yaml
+
+detector:
+  weights: ../models/weights/tools-best.pt
+  confidence: 0.40
+  person_confidence: 0.50
+  object_confidence: 0.40
+  device: cuda:0
+  allowed_classes:
+    - person
+    - component_A
+    - torque_wrench
+    - open_end_wrench
+
+pose:
+  enabled: true
+  config: ../configs/rtmpose-body.py
+  checkpoint: ../models/weights/rtmpose-body.pth
+  device: cuda:0
+
+live:
+  backend: gstreamer-opencv
+  rtsp_transport: tcp
+  latency_ms: 100
+  appsink_max_buffers: 1
+  appsink_drop: true
+  appsink_sync: false
+  decoder_element: null
+
+action_min_confidence: 0.75

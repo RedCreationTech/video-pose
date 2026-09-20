@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .live_capture_factory import build_live_camera_factory
 from .live_gateway import ThreadedLiveGateway
 from .live_health import LiveHealthRegistry, LiveHealthSnapshot
 from .live_video import LiveFrameSynchronizer, MemoryFrameStore
@@ -184,6 +185,10 @@ def build_live_runtime(
         manifest,
         synchronizer,
         health=health,
+        camera_factory=build_live_camera_factory(
+            manifest,
+            config.config.live,
+        ),
     )
     return LiveAnalysisRuntime(
         gateway=gateway,

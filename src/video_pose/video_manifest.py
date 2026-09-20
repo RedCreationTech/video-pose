@@ -18,6 +18,7 @@ class CameraReplaySource(BaseModel):
     camera_id: str
     position: CameraPosition
     uri: str
+    codec: str = "h264"
     clock_offset_ms: float = 0.0
     enabled: bool = True
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 
 import yaml
@@ -57,6 +58,21 @@ class IndustrialActionRuntimeConfig(BaseModel):
     inspect_dwell_frames: int = Field(default=5, ge=1)
 
 
+class CaptureBackend(StrEnum):
+    OPENCV = "opencv"
+    GSTREAMER_OPENCV = "gstreamer-opencv"
+
+
+class LiveCaptureRuntimeConfig(BaseModel):
+    backend: CaptureBackend = CaptureBackend.OPENCV
+    rtsp_transport: str = "tcp"
+    latency_ms: int = Field(default=100, ge=0)
+    appsink_max_buffers: int = Field(default=1, ge=1)
+    appsink_drop: bool = True
+    appsink_sync: bool = False
+    decoder_element: str | None = None
+
+
 class OfflineAnalysisConfig(BaseModel):
     manifest: str
     rules: str
@@ -71,6 +87,9 @@ class OfflineAnalysisConfig(BaseModel):
     )
     actions: IndustrialActionRuntimeConfig = Field(
         default_factory=IndustrialActionRuntimeConfig
+    )
+    live: LiveCaptureRuntimeConfig = Field(
+        default_factory=LiveCaptureRuntimeConfig
     )
     action_min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
 
