@@ -1,0 +1,88 @@
+#+TITLE: Video Pose Session Lifecycle and Audit
+#+SUBTITLE: Managed Start Stop Abort and Durable JSONL Trace
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. Session API
+
+#+BEGIN_SRC text
+POST /api/v1/sessions
+GET  /api/v1/sessions/current
+POST /api/v1/sessions/{id}/stop
+POST /api/v1/sessions/{id}/abort
+#+END_SRC
+
+Start body:
+
+#+BEGIN_SRC json
+{
+  "session_id": "optional-id",
+  "operator_id": "operator-001"
+}
+#+END_SRC
+
+若不提供 session_id, 服务自动生成 UUID.
+
+* 2. Session Freeze
+
+Session 开始时记录:
+
+- session id.
+- operator id.
+- operation.
+- workstation.
+- rule set version.
+- config path.
+- detector weights.
+- pose config/checkpoint.
+- planar/perspective calibration.
+
+第一版配置文件在运行期间不热切换.
+
+* 3. Audit Directory
+
+#+BEGIN_SRC text
+output/sessions/<session-id>/
+  metadata.json
+  updates.jsonl
+  final.json
+#+END_SRC
+
+=updates.jsonl= 持续保存:
+
+- actions.
+- new violations.
+- changed steps.
+- score/pass state.
+
+=final.json= 保存最终 RuleSessionUpdate.
+
+* 4. Managed Service
+
+#+BEGIN_SRC sh
+video-pose-serve \
+  --config configs/live-gstreamer-demo.yaml \
+  --audit-dir output/sessions
+#+END_SRC
+
+默认服务启动后处于 idle, 通过 Session API 开始正式作业.
+
+如用于单工位自动演示可传:
+
+#+BEGIN_SRC sh
+--autostart
+#+END_SRC
+
+* 5. 当前边界
+
+第一版每个 Session 会创建/停止一次 LiveAnalysisRuntime, 因此会重新连接四路摄像头.
+
+下一阶段会拆分:
+
+#+BEGIN_SRC text
+Persistent Camera Gateway
+       |
+Session-scoped AI/Rule Context
+#+END_SRC
+
+做到摄像头常驻, Session 只重置业务状态.

@@ -160,8 +160,10 @@ def build_live_runtime(
     config: LoadedAnalysisConfig,
     *,
     processing_queue_size: int = 2,
+    session_id: str | None = None,
 ) -> LiveAnalysisRuntime:
     manifest = load_manifest(config.resolve(config.config.manifest))
+    effective_session_id = session_id or manifest.session_id
     frame_store = MemoryFrameStore()
     health = LiveHealthRegistry(
         [
@@ -174,12 +176,12 @@ def build_live_runtime(
     synchronizer = LiveFrameSynchronizer(manifest, frame_store)
     pipeline = build_analysis_pipeline(
         config,
-        session_id=manifest.session_id,
+        session_id=effective_session_id,
         frame_loader=frame_store,
     )
     rule_session = RealtimeRuleSession(
         build_rule_engine(config),
-        session_id=manifest.session_id,
+        session_id=effective_session_id,
     )
     gateway = ThreadedLiveGateway(
         manifest,

@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import argparse
 
-from .live_runtime import build_live_runtime
-from .live_service import create_live_app
+from .live_service import create_managed_live_app
 from .runtime_config import load_analysis_config
+from .session_controller import LiveSessionController
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run Video Pose live HTTP/WebSocket service"
+        description="Run Video Pose managed live HTTP/WebSocket service"
     )
     parser.add_argument("--config", required=True)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--queue-size", type=int, default=2)
+    parser.add_argument("--audit-dir", default="output/sessions")
+    parser.add_argument("--autostart", action="store_true")
     return parser
 
 
@@ -27,11 +29,15 @@ def main() -> int:
             "video-pose-serve requires the optional 'api' dependencies"
         ) from exc
 
-    runtime = build_live_runtime(
+    controller = LiveSessionController(
         load_analysis_config(args.config),
+        audit_root=args.audit_dir,
         processing_queue_size=args.queue_size,
     )
-    app = create_live_app(runtime)
+    app = create_managed_live_app(
+        controller,
+        autostart=args.autostart,
+    )
     uvicorn.run(
         app,
         host=args.host,
