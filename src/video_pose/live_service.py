@@ -116,6 +116,42 @@ def create_managed_live_app(
         JSONResponse,
     )
 
+    @app.get("/api/v1/cameras")
+    def camera_catalog() -> Any:
+        method = getattr(controller, "camera_catalog", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="camera catalog is unavailable",
+            )
+        return method()
+
+    @app.get("/api/v1/cameras/{camera_id}/snapshot.jpg")
+    def camera_snapshot(
+        camera_id: str,
+        quality: int = Query(default=80, ge=1, le=100),
+    ) -> Any:
+        method = getattr(controller, "camera_snapshot", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="camera snapshot is unavailable",
+            )
+        try:
+            snapshot = method(camera_id, quality=quality)
+        except (KeyError, LookupError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return Response(
+            content=snapshot.content,
+            media_type=snapshot.media_type,
+            headers={
+                "X-Video-Pose-Timestamp-Ms": str(snapshot.timestamp_ms),
+                "Cache-Control": "no-store",
+            },
+        )
+
     @app.post("/api/v1/sessions")
     def start_session(request: SessionStartRequest) -> Any:
         try:
@@ -131,6 +167,13 @@ def create_managed_live_app(
             if current is not None
             else None
         )
+
+    @app.get("/api/v1/sessions/current/evaluation")
+    def current_evaluation() -> Any:
+        method = getattr(controller, "current_evaluation", None)
+        if not callable(method):
+            return None
+        return method()
 
     @app.get("/api/v1/sessions")
     def list_sessions(

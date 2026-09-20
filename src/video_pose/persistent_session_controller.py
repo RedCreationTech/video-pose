@@ -38,8 +38,8 @@ class PersistentLiveSessionController:
         config: LoadedAnalysisConfig,
         *,
         hub: PersistentCameraHub,
-        model_pool: PersistentModelPool | None = None,
         audit_root: str | Path,
+        model_pool: PersistentModelPool | None = None,
         processing_queue_size: int = 2,
         runtime_factory: Callable[
             ...,
@@ -193,8 +193,34 @@ class PersistentLiveSessionController:
                 else None
             )
 
+    def current_evaluation(self) -> dict[str, Any] | None:
+        with self._lock:
+            runtime = self._runtime
+        if runtime is None:
+            return None
+        result = runtime.rule_session.current_result()
+        return (
+            result.model_dump(mode="json")
+            if result is not None
+            else None
+        )
+
     def health_snapshot(self):
         return self.hub.health_snapshot()
+
+    def camera_catalog(self) -> list[dict[str, Any]]:
+        return self.hub.camera_catalog()
+
+    def camera_snapshot(
+        self,
+        camera_id: str,
+        *,
+        quality: int = 80,
+    ):
+        return self.hub.snapshot_jpeg(
+            camera_id,
+            quality=quality,
+        )
 
     def persistence_health(self) -> dict[str, Any]:
         if self.repository is None:

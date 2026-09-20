@@ -48,6 +48,13 @@ class RealtimeRuleSession:
     def finish(self, session_end_ms: int) -> RuleSessionUpdate:
         return self._evaluate(now_ms=session_end_ms, finalize=True)
 
+    def current_result(self) -> ReplayResult | None:
+        return (
+            self._last_result.model_copy(deep=True)
+            if self._last_result is not None
+            else None
+        )
+
     def _evaluate(
         self,
         *,

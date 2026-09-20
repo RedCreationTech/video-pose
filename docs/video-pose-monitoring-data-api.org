@@ -1,0 +1,83 @@
+#+TITLE: Video Pose Monitoring Data API
+#+SUBTITLE: Camera Catalog, Snapshots and Current Evaluation
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 前端数据面
+
+工业监控台第一版需要三类稳定数据:
+
+- 四路摄像头状态和预览.
+- 当前 Session 完整步骤/违规/评分.
+- WebSocket 实时 delta.
+
+* 2. Camera Catalog
+
+#+BEGIN_SRC text
+GET /api/v1/cameras
+#+END_SRC
+
+返回每路:
+
+- camera_id.
+- FRONT/REAR/LEFT/RIGHT.
+- codec.
+- enabled.
+- health state.
+- FPS.
+- reconnect_total.
+- snapshot_available.
+
+* 3. JPEG Snapshot
+
+#+BEGIN_SRC text
+GET /api/v1/cameras/{camera_id}/snapshot.jpg?quality=80
+#+END_SRC
+
+响应:
+
+#+BEGIN_SRC text
+Content-Type: image/jpeg
+Cache-Control: no-store
+X-Video-Pose-Timestamp-Ms: ...
+#+END_SRC
+
+Snapshot 直接来自 PersistentCameraHub 的最新 synchronized FrameSet.
+
+MVP 前端可每 500-1000 ms 拉取 Snapshot.
+
+正式高帧率预览后续切换 WebRTC/HLS, 不影响当前 Camera API.
+
+* 4. Current Evaluation
+
+#+BEGIN_SRC text
+GET /api/v1/sessions/current/evaluation
+#+END_SRC
+
+返回当前 RuleEngine 的完整状态:
+
+- steps.
+- violations.
+- score.
+- passed.
+
+WebSocket 仍只推 delta, 页面断线重连后通过 Current Evaluation 重新获得完整快照.
+
+* 5. 推荐前端同步策略
+
+#+BEGIN_SRC text
+Page Load
+  |
+GET cameras
+GET current session
+GET current evaluation
+  |
+Connect WebSocket
+  |
+apply delta
+  |
+on reconnect:
+GET current evaluation again
+#+END_SRC
+
+这避免前端只依赖 WebSocket 历史消息恢复状态.
