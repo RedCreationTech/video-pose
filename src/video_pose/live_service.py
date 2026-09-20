@@ -30,6 +30,7 @@ def create_live_app(
             Header,
             HTTPException,
             Response,
+            WebSocket,
             WebSocketDisconnect,
         )
         from fastapi.responses import JSONResponse
@@ -69,6 +70,7 @@ def create_live_app(
         Header,
         HTTPException,
         Response,
+        WebSocket,
         WebSocketDisconnect,
         JSONResponse,
     )
@@ -90,6 +92,7 @@ def create_managed_live_app(
             HTTPException,
             Query,
             Response,
+            WebSocket,
             WebSocketDisconnect,
         )
         from fastapi.responses import JSONResponse
@@ -313,6 +316,7 @@ def _register_runtime_routes(
     Header: Any,
     HTTPException: Any,
     Response: Any,
+    WebSocket: Any,
     WebSocketDisconnect: Any,
     JSONResponse: Any,
 ) -> None:
@@ -362,7 +366,6 @@ def _register_runtime_routes(
             media_type="text/plain; version=0.0.4",
         )
 
-    @app.websocket("/api/v1/realtime")
     async def realtime(websocket: Any) -> None:
         try:
             authorization = websocket.headers.get("authorization")
@@ -417,3 +420,6 @@ def _register_runtime_routes(
                 sequence = envelope.sequence
         except WebSocketDisconnect:
             return
+
+    realtime.__annotations__["websocket"] = WebSocket
+    app.websocket("/api/v1/realtime")(realtime)
