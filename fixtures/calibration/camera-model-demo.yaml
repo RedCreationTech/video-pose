@@ -1,0 +1,28 @@
+profile_id: perspective-demo
+version: 1
+cameras:
+  - camera_id: cam-front
+    intrinsics:
+      fx: 1.0
+      fy: 1.0
+      cx: 0.0
+      cy: 0.0
+    extrinsics:
+      rotation:
+        - [1.0, 0.0, 0.0]
+        - [0.0, 1.0, 0.0]
+        - [0.0, 0.0, 1.0]
+      translation: [0.0, 0.0, 0.0]
+
+  - camera_id: cam-left
+    intrinsics:
+      fx: 1.0
+      fy: 1.0
+      cx: 0.0
+      cy: 0.0
+    extrinsics:
+      rotation:
+        - [1.0, 0.0, 0.0]
+        - [0.0, 1.0, 0.0]
+        - [0.0, 0.0, 1.0]
+      translation: [-1.0, 0.0, 0.0]

@@ -168,9 +168,22 @@ def build_doctor_report(
                 ("pose-checkpoint", cfg.pose.checkpoint),
             ]
         )
+    if cfg.triangulation.enabled:
+        assets.append(
+            ("perspective-calibration", cfg.triangulation.calibration)
+        )
 
     for name, value in assets:
         if value is None:
+            if name == "perspective-calibration":
+                checks.append(
+                    DoctorCheck(
+                        name=name,
+                        status=CheckStatus.FAIL,
+                        required=True,
+                        detail="triangulation is enabled but calibration is unset",
+                    )
+                )
             continue
         checks.append(_path_check(name, loaded.resolve(value)))
 

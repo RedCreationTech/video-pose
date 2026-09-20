@@ -1,0 +1,58 @@
+#+TITLE: Video Pose Camera Model and Calibration Health
+#+SUBTITLE: K, R/t, Projection Matrix and Reprojection Verification
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. Projection Matrix 生成
+
+输入每路相机:
+
+- fx/fy.
+- cx/cy.
+- skew.
+- 3x3 rotation.
+- translation xyz.
+
+执行:
+
+#+BEGIN_SRC sh
+video-pose-camera-model \
+  --input camera-model.yaml \
+  --output perspective-calibration.yaml
+#+END_SRC
+
+内部计算:
+
+#+BEGIN_SRC text
+P = K [R | t]
+#+END_SRC
+
+* 2. Calibration Health
+
+准备独立控制点, 不要全部复用求标定时的点.
+
+#+BEGIN_SRC sh
+video-pose-calibration-health \
+  --calibration perspective-calibration.yaml \
+  --control-points control-points.yaml \
+  --max-rmse 5
+#+END_SRC
+
+输出每路:
+
+- point count.
+- RMSE.
+- max error.
+- PASS/FAIL.
+
+* 3. Doctor 集成
+
+如果 =triangulation.enabled=true=, Doctor 会要求 perspective calibration 文件存在.
+
+* 4. 现场原则
+
+- 标定点覆盖整个有效工作区域.
+- 控制点和拟合点尽量分离.
+- 相机位置变化后必须重新标定.
+- 每次正式 Session 保存 calibration version.
+- 重投影误差超过阈值时 3D 不应自动用于最终合规判断.

@@ -1,0 +1,13 @@
+points:
+  - camera_id: cam-front
+    world: {x: 2.0, y: 1.0, z: 4.0}
+    image: {x: 0.5, y: 0.25}
+  - camera_id: cam-front
+    world: {x: 4.0, y: 2.0, z: 8.0}
+    image: {x: 0.5, y: 0.25}
+  - camera_id: cam-left
+    world: {x: 2.0, y: 1.0, z: 4.0}
+    image: {x: 0.25, y: 0.25}
+  - camera_id: cam-left
+    world: {x: 4.0, y: 2.0, z: 8.0}
+    image: {x: 0.375, y: 0.25}

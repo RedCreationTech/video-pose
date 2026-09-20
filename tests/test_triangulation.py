@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from video_pose.observations import Observation, ObservationType
+from video_pose.observations import Observation
 from video_pose.perspective import load_perspective_calibration
 from video_pose.triangulation import TriangulationProcessor
 
