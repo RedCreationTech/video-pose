@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from .session_audit import SessionAuditMetadata
 from .session_store import SessionStore
+from .violation_review import ViolationReviewRequest
 
 
 class PersistenceStatus(StrEnum):
@@ -96,6 +97,68 @@ class ResilientSessionStore:
             return result
         except Exception as exc:
             self._mark_read_error(exc)
+            return None
+
+    def list_pending_reviews(
+        self,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        try:
+            result = self.store.list_pending_reviews(limit)
+            self._mark_success()
+            return result
+        except Exception as exc:
+            self._mark_read_error(exc)
+            return []
+
+    def review_violation(
+        self,
+        session_id: str,
+        violation_id: int,
+        review: ViolationReviewRequest,
+        *,
+        reviewer: str,
+        reviewed_at: Any | None = None,
+    ) -> dict[str, Any] | None:
+        try:
+            result = self.store.review_violation(
+                session_id,
+                violation_id,
+                review,
+                reviewer=reviewer,
+                reviewed_at=reviewed_at,
+            )
+            self._mark_success()
+            return result
+        except Exception as exc:
+            self._mark_write_error(exc)
+            return None
+
+    def review_violation_by_identity(
+        self,
+        session_id: str,
+        *,
+        rule_id: str,
+        step_code: str,
+        event_id: str,
+        review: ViolationReviewRequest,
+        reviewer: str,
+        reviewed_at: Any | None = None,
+    ) -> dict[str, Any] | None:
+        try:
+            result = self.store.review_violation_by_identity(
+                session_id,
+                rule_id=rule_id,
+                step_code=step_code,
+                event_id=event_id,
+                review=review,
+                reviewer=reviewer,
+                reviewed_at=reviewed_at,
+            )
+            self._mark_success()
+            return result
+        except Exception as exc:
+            self._mark_write_error(exc)
             return None
 
     def health(self) -> PersistenceHealth:

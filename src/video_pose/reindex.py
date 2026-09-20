@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -8,12 +9,14 @@ from pydantic import BaseModel
 
 from .session_audit import SessionAuditMetadata
 from .session_store import SessionStore
+from .violation_review import ViolationReviewRequest
 
 
 class ReindexResult(BaseModel):
     session_id: str
     update_count: int
     finalized: bool
+    review_count: int = 0
 
 
 def reindex_session(
@@ -26,6 +29,7 @@ def reindex_session(
     metadata_path = directory / "metadata.json"
     updates_path = directory / "updates.jsonl"
     final_path = directory / "final.json"
+    reviews_path = directory / "reviews.jsonl"
 
     metadata_payload = json.loads(
         metadata_path.read_text(encoding="utf-8")
@@ -78,10 +82,49 @@ def reindex_session(
             )
             finalized = True
 
+    review_count = 0
+    if reviews_path.exists():
+        with reviews_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                record = json.loads(stripped)
+                payload = record.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                review_payload = payload.get("review")
+                if not isinstance(review_payload, dict):
+                    continue
+                review_method = getattr(
+                    repository,
+                    "review_violation_by_identity",
+                    None,
+                )
+                if not callable(review_method):
+                    continue
+                review_method(
+                    audit.session_id,
+                    rule_id=str(payload.get("rule_id", "")),
+                    step_code=str(payload.get("step_code", "")),
+                    event_id=str(payload.get("event_id", "")),
+                    review=ViolationReviewRequest.model_validate(
+                        review_payload
+                    ),
+                    reviewer=str(payload.get("reviewer", "")),
+                    reviewed_at=(
+                        datetime.fromisoformat(payload["reviewed_at"])
+                        if payload.get("reviewed_at")
+                        else None
+                    ),
+                )
+                review_count += 1
+
     return ReindexResult(
         session_id=audit.session_id,
         update_count=update_count,
         finalized=finalized,
+        review_count=review_count,
     )
 
 

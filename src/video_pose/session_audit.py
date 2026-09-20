@@ -43,6 +43,7 @@ class SessionAuditWriter:
             metadata.model_dump(mode="json"),
         )
         (directory / "updates.jsonl").touch()
+        (directory / "reviews.jsonl").touch()
         return directory
 
     def append_payload(
@@ -55,6 +56,25 @@ class SessionAuditWriter:
             "payload": payload,
         }
         path = self.root / session_id / "updates.jsonl"
+        rendered = json.dumps(
+            record,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        with self._lock:
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(rendered + "\n")
+
+    def append_review(
+        self,
+        session_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        record = {
+            "recorded_at": _utc_now(),
+            "payload": payload,
+        }
+        path = self.root / session_id / "reviews.jsonl"
         rendered = json.dumps(
             record,
             ensure_ascii=False,

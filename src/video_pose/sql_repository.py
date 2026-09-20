@@ -25,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection, Engine
 
 from .session_audit import SessionAuditMetadata
+from .violation_review import ViolationReviewRequest
 
 metadata = MetaData()
 
@@ -63,6 +64,11 @@ actions = Table(
     Column("started_at_ms", BigInteger),
     Column("ended_at_ms", BigInteger),
     Column("confidence", Float),
+    Column("review_status", String(32), nullable=False, default="UNREVIEWED", server_default="UNREVIEWED"),
+    Column("reviewed_by", String(128)),
+    Column("reviewed_at", DateTime(timezone=True)),
+    Column("review_reason_code", String(128)),
+    Column("review_comment", String(2000)),
     Column("payload_json", JSON, nullable=False),
     UniqueConstraint(
         "session_id",
@@ -286,6 +292,112 @@ class SQLAlchemySessionRepository:
                     dict(row._mapping) for row in step_rows
                 ],
             }
+
+    def list_pending_reviews(
+        self,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(limit, 1000))
+        statement = (
+            select(violations)
+            .where(violations.c.review_status == "UNREVIEWED")
+            .order_by(violations.c.id)
+            .limit(safe_limit)
+        )
+        with self.engine.connect() as connection:
+            return [
+                dict(row._mapping)
+                for row in connection.execute(statement)
+            ]
+
+    def review_violation(
+        self,
+        session_id: str,
+        violation_id: int,
+        review: ViolationReviewRequest,
+        *,
+        reviewer: str,
+        reviewed_at: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        return self._review_violation(
+            session_id=session_id,
+            review=review,
+            reviewer=reviewer,
+            reviewed_at=reviewed_at,
+            violation_id=violation_id,
+        )
+
+    def review_violation_by_identity(
+        self,
+        session_id: str,
+        *,
+        rule_id: str,
+        step_code: str,
+        event_id: str,
+        review: ViolationReviewRequest,
+        reviewer: str,
+        reviewed_at: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        return self._review_violation(
+            session_id=session_id,
+            review=review,
+            reviewer=reviewer,
+            reviewed_at=reviewed_at,
+            rule_id=rule_id,
+            step_code=step_code,
+            event_id=event_id,
+        )
+
+    def _review_violation(
+        self,
+        *,
+        session_id: str,
+        review: ViolationReviewRequest,
+        reviewer: str,
+        reviewed_at: datetime | None,
+        violation_id: int | None = None,
+        rule_id: str | None = None,
+        step_code: str | None = None,
+        event_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        statement = select(violations).where(
+            violations.c.session_id == session_id
+        )
+        if violation_id is not None:
+            statement = statement.where(violations.c.id == violation_id)
+        else:
+            statement = statement.where(
+                violations.c.rule_id == rule_id,
+                violations.c.step_code == step_code,
+                violations.c.event_id == event_id,
+            )
+
+        timestamp = reviewed_at or datetime.now().astimezone()
+        values = {
+            "review_status": review.decision.value,
+            "reviewed_by": reviewer,
+            "reviewed_at": timestamp,
+            "review_reason_code": review.reason_code,
+            "review_comment": review.comment,
+        }
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).first()
+            if row is None:
+                return None
+            target_id = row._mapping["id"]
+            connection.execute(
+                update(violations)
+                .where(violations.c.id == target_id)
+                .values(**values)
+            )
+            updated_row = connection.execute(
+                select(violations).where(violations.c.id == target_id)
+            ).first()
+            return (
+                dict(updated_row._mapping)
+                if updated_row is not None
+                else None
+            )
 
     def delete_session(self, session_id: str) -> None:
         with self.engine.begin() as connection:
