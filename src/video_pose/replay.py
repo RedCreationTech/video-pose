@@ -18,10 +18,20 @@ def load_events(path: str | Path) -> list[ActionEvent]:
                 payload = json.loads(stripped)
                 events.append(ActionEvent.model_validate(payload))
             except Exception as exc:  # pragma: no cover - message path
-                raise ValueError(f"invalid replay event at line {line_number}: {exc}") from exc
+                raise ValueError(
+                    f"invalid replay event at line {line_number}: {exc}"
+                ) from exc
     return events
 
 
-def run_replay(events_path: str | Path, rules_path: str | Path) -> ReplayResult:
+def run_replay(
+    events_path: str | Path,
+    rules_path: str | Path,
+    *,
+    session_end_ms: int | None = None,
+) -> ReplayResult:
     engine = RuleEngine.from_yaml(rules_path)
-    return engine.evaluate(load_events(events_path))
+    return engine.evaluate(
+        load_events(events_path),
+        session_end_ms=session_end_ms,
+    )

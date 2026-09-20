@@ -81,7 +81,19 @@ def main() -> int:
             for trace in traces
             for action in trace.actions
         ]
-        evaluation = runtime.rule_engine.evaluate(actions) if actions else None
+        session_end_ms = (
+            round(traces[-1].frame_set.reference_timestamp_ms)
+            if traces
+            else None
+        )
+        evaluation = (
+            runtime.rule_engine.evaluate(
+                actions,
+                session_end_ms=session_end_ms,
+            )
+            if actions
+            else None
+        )
 
         if args.debug_overlay_dir:
             debug_videos = OpenCVDebugVideoWriter().write(

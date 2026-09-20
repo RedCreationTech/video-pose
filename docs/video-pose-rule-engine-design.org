@@ -1,36 +1,27 @@
 #+TITLE: Video Pose Rule Engine Design
-#+SUBTITLE: 顺序, 缺失, 时间与业务约束判定
+#+SUBTITLE: 顺序, 时长, 节拍, 超时与缺失判定
 #+AUTHOR: RedCreationTech
 #+DATE: 2026-09-20
 
-* 1. 当前自动规则
+* 1. 自动规则类型
 
-Rule Engine 当前内建:
+当前内建:
 
-- MISSING.
 - ORDER.
 - TEMPORAL.
+- TIMEOUT.
+- MISSING.
 
-业务 YAML 规则继续负责:
+业务规则继续负责:
 
 - WRONG_TOOL.
 - WRONG_OBJECT.
 - SPATIAL.
-- SAFETY 等.
+- SAFETY.
 
-* 2. ORDER
+* 2. 动作持续时间
 
-当事件匹配 PENDING 步骤, 但 predecessor 未完成:
-
-#+BEGIN_SRC text
-AUTO-ORDER-Sxxx
-#+END_SRC
-
-记录一次 ORDER 违规, 步骤仍可后续按正确顺序完成.
-
-* 3. TEMPORAL
-
-StepDefinition 支持:
+Step 支持:
 
 #+BEGIN_SRC yaml
 min_duration_ms: 500
@@ -38,35 +29,68 @@ max_duration_ms: 2000
 temporal_severity: MINOR
 #+END_SRC
 
-动作时长来自:
+超出范围记录 TEMPORAL, 步骤仍 COMPLETED.
 
-#+BEGIN_SRC text
-ended_at_ms - started_at_ms
+* 3. 步骤启动节拍
+
+有 predecessor 的步骤可以配置:
+
+#+BEGIN_SRC yaml
+min_start_delay_ms: 100
+max_start_delay_ms: 1000
+start_delay_severity: MINOR
+timeout_severity: MAJOR
 #+END_SRC
 
-超出区间产生:
+=ready_at_ms= 取所有 predecessor 完成时间的最大值.
+
+启动过早:
 
 #+BEGIN_SRC text
-AUTO-TEMPORAL-Sxxx
-type=TEMPORAL
+TEMPORAL
+reason=started_too_soon
 #+END_SRC
 
-步骤仍标记 COMPLETED, 因为动作确实发生了.
-
-* 4. duration unavailable
-
-当步骤配置了时长约束, 但 ActionEvent 没有 =ended_at_ms=, 当前视为 TEMPORAL 证据不足:
+超过最大等待窗口:
 
 #+BEGIN_SRC text
-reason=duration_unavailable
+TIMEOUT
 #+END_SRC
 
-后续可以升级为 UNKNOWN/人工复核策略.
+如果迟到动作后来发生, 步骤仍 COMPLETED, 但保留 TIMEOUT.
 
-* 5. 下一步
+* 4. Session End Timeout
 
-- predecessor gap constraints.
-- start deadline.
+RuleEngine.evaluate 支持:
+
+#+BEGIN_SRC python
+evaluate(events, session_end_ms=...)
+#+END_SRC
+
+当某步骤已经 READY, 但到 Session 结束仍未开始并超过 max_start_delay_ms:
+
+- 记录 TIMEOUT.
+- 步骤标记 VIOLATED.
+- 不再重复记录 MISSING.
+
+离线分析使用最后一个同步 FrameSet 时间作为 session_end_ms.
+
+* 5. ORDER 与 TIMEOUT
+
+ORDER:
+
+动作发生在 predecessor 完成之前.
+
+TIMEOUT:
+
+predecessor 已完成, 但后续动作开始太晚或根本没开始.
+
+两者语义分离.
+
+* 6. 下一阶段
+
 - parallel branch.
 - retry policy.
-- rule trace persistence.
+- explicit optional branch.
+- rule evaluation trace persistence.
+- runtime incremental rule engine.

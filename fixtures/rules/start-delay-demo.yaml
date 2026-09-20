@@ -1,0 +1,19 @@
+operation: start_delay_demo
+version: 1
+steps:
+  - code: S010
+    name: 拿取工件
+    action: PICK
+    object_class: component_A
+    source_zone: component_bin_A
+
+  - code: S020
+    name: 放入装配区
+    action: PLACE
+    object_class: component_A
+    target_zone: assembly_zone
+    predecessors: [S010]
+    min_start_delay_ms: 100
+    max_start_delay_ms: 1000
+    start_delay_severity: MINOR
+    timeout_severity: MAJOR

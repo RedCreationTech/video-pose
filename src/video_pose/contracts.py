@@ -93,15 +93,27 @@ class StepDefinition(BaseModel):
     min_duration_ms: int | None = Field(default=None, ge=0)
     max_duration_ms: int | None = Field(default=None, ge=0)
     temporal_severity: Severity = Severity.MINOR
+    min_start_delay_ms: int | None = Field(default=None, ge=0)
+    max_start_delay_ms: int | None = Field(default=None, ge=0)
+    start_delay_severity: Severity = Severity.MINOR
+    timeout_severity: Severity = Severity.MAJOR
 
     @model_validator(mode="after")
-    def validate_duration_range(self) -> StepDefinition:
+    def validate_temporal_ranges(self) -> StepDefinition:
         if (
             self.min_duration_ms is not None
             and self.max_duration_ms is not None
             and self.min_duration_ms > self.max_duration_ms
         ):
             raise ValueError("min_duration_ms must be <= max_duration_ms")
+        if (
+            self.min_start_delay_ms is not None
+            and self.max_start_delay_ms is not None
+            and self.min_start_delay_ms > self.max_start_delay_ms
+        ):
+            raise ValueError(
+                "min_start_delay_ms must be <= max_start_delay_ms"
+            )
         return self
 
 

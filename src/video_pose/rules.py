@@ -23,6 +23,8 @@ class _SessionState:
     steps: dict[str, StepResult]
     violations: list[Violation]
     order_violation_steps: set[str]
+    completed_at_ms: dict[str, int]
+    ready_at_ms: dict[str, int]
 
 
 class RuleEngine:
@@ -30,7 +32,6 @@ class RuleEngine:
 
     def __init__(self, rule_set: RuleSet) -> None:
         self.rule_set = rule_set
-        self._step_defs = {step.code: step for step in rule_set.steps}
         self._rules_by_action: dict[str, list[RuleDefinition]] = {}
         for rule in rule_set.rules:
             self._rules_by_action.setdefault(rule.action.value, []).append(rule)
@@ -41,7 +42,12 @@ class RuleEngine:
             payload = yaml.safe_load(handle)
         return cls(RuleSet.model_validate(payload))
 
-    def evaluate(self, events: Iterable[ActionEvent]) -> ReplayResult:
+    def evaluate(
+        self,
+        events: Iterable[ActionEvent],
+        *,
+        session_end_ms: int | None = None,
+    ) -> ReplayResult:
         ordered = sorted(
             events,
             key=lambda item: (item.sequence, item.started_at_ms, item.event_id),
@@ -57,14 +63,18 @@ class RuleEngine:
             steps={
                 step.code: StepResult(
                     code=step.code,
-                    state=StepState.READY
-                    if not step.predecessors
-                    else StepState.PENDING,
+                    state=(
+                        StepState.READY
+                        if not step.predecessors
+                        else StepState.PENDING
+                    ),
                 )
                 for step in self.rule_set.steps
             },
             violations=[],
             order_violation_steps=set(),
+            completed_at_ms={},
+            ready_at_ms={},
         )
 
         seen_sequences: set[int] = set()
@@ -77,7 +87,13 @@ class RuleEngine:
             self._apply_event(state, event)
             self._refresh_ready_steps(state)
 
+        inferred_end = max(
+            event.ended_at_ms or event.started_at_ms for event in ordered
+        )
+        final_time = session_end_ms if session_end_ms is not None else inferred_end
+        self._finalize_timeouts(state, final_time)
         self._finalize_missing_required_steps(state)
+
         score = self._score(state.violations)
         passed = not any(
             violation.severity.value in {"MAJOR", "CRITICAL"}
@@ -98,7 +114,8 @@ class RuleEngine:
             step
             for step in self.rule_set.steps
             if step.action == event.action
-            and state.steps[step.code].state in {StepState.READY, StepState.ACTIVE}
+            and state.steps[step.code].state
+            in {StepState.READY, StepState.ACTIVE}
         ]
         if not candidate_steps:
             self._record_out_of_order(state, event)
@@ -136,9 +153,20 @@ class RuleEngine:
                 event_id=event.event_id,
                 confidence=event.confidence,
             )
-            temporal = self._temporal_violation(step, event)
-            if temporal is not None:
-                state.violations.append(temporal)
+            completed_at = event.ended_at_ms or event.started_at_ms
+            state.completed_at_ms[step.code] = completed_at
+
+            duration_violation = self._duration_violation(step, event)
+            if duration_violation is not None:
+                state.violations.append(duration_violation)
+
+            delay_violation = self._start_delay_violation(
+                state,
+                step,
+                event,
+            )
+            if delay_violation is not None:
+                state.violations.append(delay_violation)
             return
 
     def _record_out_of_order(
@@ -146,11 +174,7 @@ class RuleEngine:
         state: _SessionState,
         event: ActionEvent,
     ) -> None:
-        completed = {
-            code
-            for code, result in state.steps.items()
-            if result.state == StepState.COMPLETED
-        }
+        completed = set(state.completed_at_ms)
         for step in self.rule_set.steps:
             if step.action != event.action:
                 continue
@@ -194,7 +218,7 @@ class RuleEngine:
             )
             return
 
-    def _temporal_violation(
+    def _duration_violation(
         self,
         step: StepDefinition,
         event: ActionEvent,
@@ -242,7 +266,136 @@ class RuleEngine:
             },
         )
 
-    def _step_mismatch(self, step: StepDefinition, event: ActionEvent) -> str | None:
+    def _start_delay_violation(
+        self,
+        state: _SessionState,
+        step: StepDefinition,
+        event: ActionEvent,
+    ) -> Violation | None:
+        if not step.predecessors:
+            return None
+        ready_at = state.ready_at_ms.get(step.code)
+        if ready_at is None:
+            return None
+
+        delay_ms = event.started_at_ms - ready_at
+        if (
+            step.min_start_delay_ms is not None
+            and delay_ms < step.min_start_delay_ms
+        ):
+            return Violation(
+                rule_id=f"AUTO-START-DELAY-{step.code}",
+                step=step.code,
+                type="TEMPORAL",
+                severity=step.start_delay_severity,
+                message=f"step {step.code} started too soon",
+                event_id=event.event_id,
+                confidence=event.confidence,
+                expected={
+                    "min_start_delay_ms": step.min_start_delay_ms,
+                    "max_start_delay_ms": step.max_start_delay_ms,
+                },
+                actual={
+                    "start_delay_ms": delay_ms,
+                    "reason": "started_too_soon",
+                },
+            )
+
+        if (
+            step.max_start_delay_ms is not None
+            and delay_ms > step.max_start_delay_ms
+        ):
+            return self._timeout_violation(
+                step,
+                event_id=event.event_id,
+                confidence=event.confidence,
+                ready_at_ms=ready_at,
+                observed_at_ms=event.started_at_ms,
+            )
+        return None
+
+    def _refresh_ready_steps(self, state: _SessionState) -> None:
+        completed = set(state.completed_at_ms)
+        for step in self.rule_set.steps:
+            current = state.steps[step.code]
+            if current.state != StepState.PENDING:
+                continue
+            if not all(
+                predecessor in completed for predecessor in step.predecessors
+            ):
+                continue
+            state.steps[step.code] = StepResult(
+                code=step.code,
+                state=StepState.READY,
+            )
+            if step.predecessors:
+                state.ready_at_ms[step.code] = max(
+                    state.completed_at_ms[predecessor]
+                    for predecessor in step.predecessors
+                )
+
+    def _finalize_timeouts(
+        self,
+        state: _SessionState,
+        session_end_ms: int,
+    ) -> None:
+        for step in self.rule_set.steps:
+            if state.steps[step.code].state != StepState.READY:
+                continue
+            if step.max_start_delay_ms is None:
+                continue
+            ready_at = state.ready_at_ms.get(step.code)
+            if ready_at is None:
+                continue
+            if session_end_ms - ready_at <= step.max_start_delay_ms:
+                continue
+
+            state.steps[step.code] = StepResult(
+                code=step.code,
+                state=StepState.VIOLATED,
+            )
+            state.violations.append(
+                self._timeout_violation(
+                    step,
+                    event_id="session-timeout",
+                    confidence=1.0,
+                    ready_at_ms=ready_at,
+                    observed_at_ms=session_end_ms,
+                )
+            )
+
+    def _timeout_violation(
+        self,
+        step: StepDefinition,
+        *,
+        event_id: str,
+        confidence: float,
+        ready_at_ms: int,
+        observed_at_ms: int,
+    ) -> Violation:
+        return Violation(
+            rule_id=f"AUTO-TIMEOUT-{step.code}",
+            step=step.code,
+            type="TIMEOUT",
+            severity=step.timeout_severity,
+            message=f"step {step.code} exceeded start deadline",
+            event_id=event_id,
+            confidence=confidence,
+            expected={
+                "max_start_delay_ms": step.max_start_delay_ms,
+            },
+            actual={
+                "ready_at_ms": ready_at_ms,
+                "observed_at_ms": observed_at_ms,
+                "start_delay_ms": observed_at_ms - ready_at_ms,
+            },
+        )
+
+    def _step_mismatch(
+        self,
+        step: StepDefinition,
+        event: ActionEvent,
+    ) -> str | None:
         actual_object = event.object.class_name if event.object else None
         checks = (
             ("object_class", step.object_class, actual_object),
@@ -316,23 +469,10 @@ class RuleEngine:
             actual=actual,
         )
 
-    def _refresh_ready_steps(self, state: _SessionState) -> None:
-        completed = {
-            code
-            for code, result in state.steps.items()
-            if result.state == StepState.COMPLETED
-        }
-        for step in self.rule_set.steps:
-            current = state.steps[step.code]
-            if current.state != StepState.PENDING:
-                continue
-            if all(predecessor in completed for predecessor in step.predecessors):
-                state.steps[step.code] = StepResult(
-                    code=step.code,
-                    state=StepState.READY,
-                )
-
-    def _finalize_missing_required_steps(self, state: _SessionState) -> None:
+    def _finalize_missing_required_steps(
+        self,
+        state: _SessionState,
+    ) -> None:
         for step in self.rule_set.steps:
             result = state.steps[step.code]
             if not step.required:

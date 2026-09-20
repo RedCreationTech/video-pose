@@ -1,0 +1,1 @@
+{"event_id":"pick","session_id":"delay-missing","sequence":1,"action":"PICK","object":{"id":"part-1","class":"component_A"},"source_zone":"component_bin_A","started_at_ms":1000,"ended_at_ms":1200,"confidence":0.95}
