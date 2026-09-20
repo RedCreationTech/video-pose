@@ -1,0 +1,101 @@
+#+TITLE: Video Pose API Security and RBAC
+#+SUBTITLE: Opaque Bearer Tokens, SHA-256 Digests and Role Permissions
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. 默认模式
+
+开发/PoC 默认不启用认证, 保持现有 CLI 和监控台兼容.
+
+生产启动:
+
+#+BEGIN_SRC sh
+export VIDEO_POSE_AUTH_ENABLED=1
+export VIDEO_POSE_AUTH_TOKENS_JSON='[
+  {
+    "subject": "shift-supervisor",
+    "role": "SUPERVISOR",
+    "token_sha256": "<sha256>"
+  }
+]'
+
+video-pose-serve \
+  --config configs/live-gstreamer-demo.yaml \
+  --auth-enabled
+#+END_SRC
+
+* 2. Token
+
+服务端配置只保存 SHA-256 digest, 不保存明文 Token.
+
+生成摘要:
+
+#+BEGIN_SRC sh
+video-pose-auth-hash
+#+END_SRC
+
+请求:
+
+#+BEGIN_SRC text
+Authorization: Bearer <token>
+#+END_SRC
+
+* 3. Roles
+
+- ADMIN.
+- ENGINEER.
+- SUPERVISOR.
+- REVIEWER.
+- OPERATOR.
+- AUDITOR.
+
+* 4. Permissions
+
+- runtime:read.
+- camera:read.
+- session:read.
+- session:start.
+- session:control.
+- persistence:read.
+- metrics:read.
+- realtime:read.
+
+* 5. 典型边界
+
+SUPERVISOR:
+
+- 查看实时状态.
+- 查看摄像头.
+- 开始/停止 Session.
+- 查看历史.
+- 实时 WebSocket.
+
+但默认不能读取 Prometheus/persistence 运维接口.
+
+REVIEWER:
+
+- 查看状态.
+- 查看摄像头和历史.
+- 实时观察.
+
+不能启动/停止 Session.
+
+* 6. WebSocket
+
+优先使用 Authorization Bearer header.
+
+浏览器无法方便设置自定义 WebSocket Header 时, 当前也支持:
+
+#+BEGIN_SRC text
+/api/v1/realtime?access_token=<token>
+#+END_SRC
+
+生产必须使用 TLS, 并应避免在代理访问日志中记录 query string.
+
+后续前端正式登录体系建议改为 SameSite Secure HttpOnly Cookie 或短期 WebSocket ticket.
+
+* 7. Health
+
+=/health/live= 和 =/health/ready= 默认不鉴权, 便于 Kubernetes/systemd 探针使用.
+
+其他业务和运维接口进入 RBAC.

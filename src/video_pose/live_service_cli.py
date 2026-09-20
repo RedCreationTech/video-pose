@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from .auth import AuthManager
 from .live_service import create_managed_live_app
 from .model_pool import build_persistent_model_pool
 from .persistent_camera import build_persistent_camera_hub
@@ -21,6 +22,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit-dir", default="output/sessions")
     parser.add_argument("--database-url")
     parser.add_argument("--autostart", action="store_true")
+    parser.add_argument(
+        "--auth-enabled",
+        action="store_true",
+        help=(
+            "Require bearer-token authentication. Token hashes are read from "
+            "VIDEO_POSE_AUTH_TOKENS_JSON."
+        ),
+    )
     return parser
 
 
@@ -59,9 +68,13 @@ def main() -> int:
         processing_queue_size=args.queue_size,
         repository=repository,
     )
+    auth = AuthManager.from_environment(
+        force_enabled=True if args.auth_enabled else None
+    )
     app = create_managed_live_app(
         controller,
         autostart=args.autostart,
+        auth=auth,
     )
     uvicorn.run(
         app,

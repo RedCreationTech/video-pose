@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
+from .auth import (
+    AuthManager,
+    AuthenticationError,
+    AuthorizationError,
+    Permission,
+)
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
 from .session_controller import SessionStartRequest
@@ -15,9 +21,17 @@ def create_live_app(
     *,
     autostart: bool = True,
     broker: LiveEventBroker | None = None,
+    auth: AuthManager | None = None,
 ) -> Any:
     try:
-        from fastapi import FastAPI, Response, WebSocketDisconnect
+        from fastapi import (
+            Depends,
+            FastAPI,
+            Header,
+            HTTPException,
+            Response,
+            WebSocketDisconnect,
+        )
         from fastapi.responses import JSONResponse
     except ImportError as exc:
         raise RuntimeError(
@@ -25,6 +39,7 @@ def create_live_app(
         ) from exc
 
     event_broker = broker or LiveEventBroker()
+    auth_manager = auth or AuthManager.disabled()
 
     @asynccontextmanager
     async def lifespan(_app: Any) -> AsyncIterator[None]:
@@ -43,11 +58,16 @@ def create_live_app(
     )
     app.state.runtime = runtime
     app.state.broker = event_broker
+    app.state.auth = auth_manager
 
     _register_runtime_routes(
         app,
         runtime,
         event_broker,
+        auth_manager,
+        Depends,
+        Header,
+        HTTPException,
         Response,
         WebSocketDisconnect,
         JSONResponse,
@@ -60,10 +80,13 @@ def create_managed_live_app(
     *,
     broker: LiveEventBroker | None = None,
     autostart: bool = False,
+    auth: AuthManager | None = None,
 ) -> Any:
     try:
         from fastapi import (
+            Depends,
             FastAPI,
+            Header,
             HTTPException,
             Query,
             Response,
@@ -76,6 +99,7 @@ def create_managed_live_app(
         ) from exc
 
     event_broker = broker or LiveEventBroker()
+    auth_manager = auth or AuthManager.disabled()
     controller.set_event_callback(event_broker.publish)
 
     @asynccontextmanager
@@ -103,18 +127,38 @@ def create_managed_live_app(
     )
     app.state.controller = controller
     app.state.broker = event_broker
+    app.state.auth = auth_manager
+
+    require = _build_http_require(
+        auth_manager,
+        Depends,
+        Header,
+        HTTPException,
+    )
 
     _register_runtime_routes(
         app,
         controller,
         event_broker,
+        auth_manager,
+        Depends,
+        Header,
+        HTTPException,
         Response,
         WebSocketDisconnect,
         JSONResponse,
     )
 
+    @app.get("/api/v1/auth/me")
+    def auth_me(
+        principal: Any = Depends(require(Permission.RUNTIME_READ)),
+    ) -> Any:
+        return principal.model_dump(mode="json")
+
     @app.get("/api/v1/cameras")
-    def camera_catalog() -> Any:
+    def camera_catalog(
+        _principal: Any = Depends(require(Permission.CAMERA_READ)),
+    ) -> Any:
         method = getattr(controller, "camera_catalog", None)
         if not callable(method):
             raise HTTPException(
@@ -127,6 +171,7 @@ def create_managed_live_app(
     def camera_snapshot(
         camera_id: str,
         quality: int = Query(default=80, ge=1, le=100),
+        _principal: Any = Depends(require(Permission.CAMERA_READ)),
     ) -> Any:
         method = getattr(controller, "camera_snapshot", None)
         if not callable(method):
@@ -150,14 +195,19 @@ def create_managed_live_app(
         )
 
     @app.post("/api/v1/sessions")
-    def start_session(request: SessionStartRequest) -> Any:
+    def start_session(
+        request: SessionStartRequest,
+        _principal: Any = Depends(require(Permission.SESSION_START)),
+    ) -> Any:
         try:
             return controller.start(request).model_dump(mode="json")
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/v1/sessions/current")
-    def current_session() -> Any:
+    def current_session(
+        _principal: Any = Depends(require(Permission.SESSION_READ)),
+    ) -> Any:
         current = controller.current()
         return (
             current.model_dump(mode="json")
@@ -166,7 +216,9 @@ def create_managed_live_app(
         )
 
     @app.get("/api/v1/sessions/current/evaluation")
-    def current_evaluation() -> Any:
+    def current_evaluation(
+        _principal: Any = Depends(require(Permission.SESSION_READ)),
+    ) -> Any:
         method = getattr(controller, "current_evaluation", None)
         if not callable(method):
             return None
@@ -175,29 +227,41 @@ def create_managed_live_app(
     @app.get("/api/v1/sessions")
     def list_sessions(
         limit: int = Query(default=100, ge=1, le=1000),
+        _principal: Any = Depends(require(Permission.SESSION_READ)),
     ) -> Any:
         return controller.list_sessions(limit)
 
     @app.get("/api/v1/sessions/{session_id}")
-    def get_session(session_id: str) -> Any:
+    def get_session(
+        session_id: str,
+        _principal: Any = Depends(require(Permission.SESSION_READ)),
+    ) -> Any:
         payload = controller.get_session(session_id)
         if payload is None:
             raise HTTPException(status_code=404, detail="session not found")
         return payload
 
     @app.get("/api/v1/runtime/persistence")
-    def persistence_health() -> dict[str, Any]:
+    def persistence_health(
+        _principal: Any = Depends(require(Permission.PERSISTENCE_READ)),
+    ) -> dict[str, Any]:
         return controller.persistence_health()
 
     @app.post("/api/v1/sessions/{session_id}/stop")
-    def stop_session(session_id: str) -> Any:
+    def stop_session(
+        session_id: str,
+        _principal: Any = Depends(require(Permission.SESSION_CONTROL)),
+    ) -> Any:
         try:
             return controller.stop(session_id).model_dump(mode="json")
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/api/v1/sessions/{session_id}/abort")
-    def abort_session(session_id: str) -> Any:
+    def abort_session(
+        session_id: str,
+        _principal: Any = Depends(require(Permission.SESSION_CONTROL)),
+    ) -> Any:
         try:
             return controller.abort(session_id).model_dump(mode="json")
         except (RuntimeError, ValueError) as exc:
@@ -206,14 +270,59 @@ def create_managed_live_app(
     return app
 
 
+def _build_http_require(
+    auth: AuthManager,
+    Depends: Any,
+    Header: Any,
+    HTTPException: Any,
+) -> Callable[[Permission], Any]:
+    del Depends
+
+    def build(permission: Permission) -> Any:
+        def dependency(
+            authorization: str | None = Header(default=None),
+        ) -> Any:
+            try:
+                return auth.authorize_bearer(
+                    authorization,
+                    permission,
+                )
+            except AuthenticationError as exc:
+                raise HTTPException(
+                    status_code=401,
+                    detail=str(exc),
+                    headers={"WWW-Authenticate": "Bearer"},
+                ) from exc
+            except AuthorizationError as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail=str(exc),
+                ) from exc
+
+        return dependency
+
+    return build
+
+
 def _register_runtime_routes(
     app: Any,
     provider: Any,
     event_broker: LiveEventBroker,
+    auth: AuthManager,
+    Depends: Any,
+    Header: Any,
+    HTTPException: Any,
     Response: Any,
     WebSocketDisconnect: Any,
     JSONResponse: Any,
 ) -> None:
+    require = _build_http_require(
+        auth,
+        Depends,
+        Header,
+        HTTPException,
+    )
+
     @app.get("/health/live")
     def health_live() -> dict[str, str]:
         return {"status": "ok"}
@@ -227,11 +336,15 @@ def _register_runtime_routes(
         )
 
     @app.get("/api/v1/runtime/health")
-    def runtime_health() -> dict[str, Any]:
+    def runtime_health(
+        _principal: Any = Depends(require(Permission.RUNTIME_READ)),
+    ) -> dict[str, Any]:
         return provider.health_snapshot().model_dump(mode="json")
 
     @app.get("/api/v1/runtime/latest")
-    def runtime_latest() -> dict[str, Any]:
+    def runtime_latest(
+        _principal: Any = Depends(require(Permission.RUNTIME_READ)),
+    ) -> dict[str, Any]:
         latest = event_broker.latest()
         if latest is None:
             return {"sequence": 0, "payload": None}
@@ -241,7 +354,9 @@ def _register_runtime_routes(
         }
 
     @app.get("/metrics")
-    def metrics() -> Any:
+    def metrics(
+        _principal: Any = Depends(require(Permission.METRICS_READ)),
+    ) -> Any:
         return Response(
             render_prometheus(provider.health_snapshot()),
             media_type="text/plain; version=0.0.4",
@@ -249,6 +364,21 @@ def _register_runtime_routes(
 
     @app.websocket("/api/v1/realtime")
     async def realtime(websocket: Any) -> None:
+        try:
+            authorization = websocket.headers.get("authorization")
+            token = websocket.query_params.get("access_token")
+            if authorization:
+                principal = auth.authenticate_bearer(authorization)
+            else:
+                principal = auth.authenticate_token(token)
+            auth.require(principal, Permission.REALTIME_READ)
+        except AuthenticationError:
+            await websocket.close(code=4401)
+            return
+        except AuthorizationError:
+            await websocket.close(code=4403)
+            return
+
         await websocket.accept()
         sequence = 0
         try:
