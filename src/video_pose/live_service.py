@@ -69,6 +69,7 @@ def create_managed_live_app(
         from fastapi import (
             FastAPI,
             HTTPException,
+            Query,
             Response,
             WebSocket,
             WebSocketDisconnect,
@@ -126,6 +127,19 @@ def create_managed_live_app(
             if current is not None
             else None
         )
+
+    @app.get("/api/v1/sessions")
+    def list_sessions(
+        limit: int = Query(default=100, ge=1, le=1000),
+    ) -> Any:
+        return controller.list_sessions(limit)
+
+    @app.get("/api/v1/sessions/{session_id}")
+    def get_session(session_id: str) -> Any:
+        payload = controller.get_session(session_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        return payload
 
     @app.post("/api/v1/sessions/{session_id}/stop")
     def stop_session(session_id: str) -> Any:

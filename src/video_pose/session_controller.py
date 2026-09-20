@@ -16,6 +16,7 @@ from .live_runtime import LiveAnalysisRuntime, LiveAnalysisUpdate, build_live_ru
 from .realtime_rules import RuleSessionUpdate
 from .runtime_config import LoadedAnalysisConfig
 from .session_audit import SessionAuditMetadata, SessionAuditWriter
+from .session_store import SessionStore
 
 
 def _utc_now() -> str:
@@ -53,11 +54,13 @@ class LiveSessionController:
         audit_root: str | Path,
         processing_queue_size: int = 2,
         runtime_factory: Callable[..., LiveAnalysisRuntime] = build_live_runtime,
+        repository: SessionStore | None = None,
     ) -> None:
         self.config = config
         self.audit = SessionAuditWriter(audit_root)
         self.processing_queue_size = processing_queue_size
         self.runtime_factory = runtime_factory
+        self.repository = repository
         self._lock = threading.RLock()
         self._runtime: LiveAnalysisRuntime | None = None
         self._state: ManagedSessionState | None = None
@@ -126,6 +129,8 @@ class LiveSessionController:
                 ),
             )
             self.audit.start(metadata)
+            if self.repository is not None:
+                self.repository.start_session(metadata)
             self._runtime = runtime
             self._state = state
 
@@ -134,11 +139,18 @@ class LiveSessionController:
             except Exception:
                 self._runtime = None
                 self._state = None
+                final_payload = {"error": "runtime start failed"}
                 self.audit.finish(
                     session_id,
-                    {"error": "runtime start failed"},
+                    final_payload,
                     status=ManagedSessionStatus.ABORTED.value,
                 )
+                if self.repository is not None:
+                    self.repository.finalize(
+                        session_id,
+                        final_payload,
+                        status=ManagedSessionStatus.ABORTED.value,
+                    )
                 raise
             return state.model_copy(deep=True)
 
@@ -168,16 +180,33 @@ class LiveSessionController:
                 return self._runtime.health_snapshot()
         return LiveHealthRegistry([], queue_capacity=0).snapshot()
 
+    def list_sessions(
+        self,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        if self.repository is None:
+            return []
+        return self.repository.list_sessions(limit)
+
+    def get_session(
+        self,
+        session_id: str,
+    ) -> dict[str, Any] | None:
+        if self.repository is None:
+            return None
+        return self.repository.get_session(session_id)
+
     def _handle_update(self, update: LiveAnalysisUpdate) -> None:
         with self._lock:
             state = self._state
             callback = self._event_callback
         if state is None:
             return
-        self.audit.append_payload(
-            state.session_id,
-            live_update_payload(update),
-        )
+
+        payload = live_update_payload(update)
+        self.audit.append_payload(state.session_id, payload)
+        if self.repository is not None:
+            self.repository.record_update(state.session_id, payload)
         if callback is not None:
             callback(update)
 
@@ -196,11 +225,18 @@ class LiveSessionController:
 
         final = runtime.stop()
         ended_at = _utc_now()
+        final_payload = final.model_dump(mode="json")
         self.audit.finish(
             session_id,
-            final.model_dump(mode="json"),
+            final_payload,
             status=status.value,
         )
+        if self.repository is not None:
+            self.repository.finalize(
+                session_id,
+                final_payload,
+                status=status.value,
+            )
 
         with self._lock:
             assert self._state is not None

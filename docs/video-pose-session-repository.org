@@ -1,0 +1,122 @@
+#+TITLE: Video Pose Structured Session Repository
+#+SUBTITLE: JSONL Audit plus SQLite/PostgreSQL Query Store
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 双写策略
+
+系统保留两套用途不同的数据:
+
+#+BEGIN_SRC text
+Immutable Audit
+metadata.json
+updates.jsonl
+final.json
+
+Queryable Store
+vp_sessions
+vp_actions
+vp_steps
+vp_violations
+#+END_SRC
+
+JSONL 是原始审计轨迹.
+
+数据库用于:
+
+- 历史 Session 查询.
+- 异常统计.
+- 步骤耗时分析.
+- 操作员趋势.
+- 报表和管理后台.
+
+* 2. SessionStore
+
+LiveSessionController 只依赖 =SessionStore= 协议.
+
+当前实现:
+
+#+BEGIN_SRC text
+SQLAlchemySessionRepository
+#+END_SRC
+
+SQLAlchemy 方言层支持:
+
+- SQLite, 本机 PoC/CI.
+- PostgreSQL, 生产.
+
+* 3. 数据表
+
+=vp_sessions=:
+
+- session_id.
+- operator_id.
+- operation.
+- workstation_id.
+- status.
+- rule_set_version.
+- started_at/ended_at.
+- final_score.
+- passed.
+- metadata_json.
+
+=vp_actions=:
+
+- event_id.
+- action.
+- object class.
+- source/target zone.
+- start/end.
+- confidence.
+- payload JSON.
+
+=vp_steps=:
+
+- step code.
+- state.
+- event id.
+- confidence.
+- payload JSON.
+
+=vp_violations=:
+
+- rule id.
+- step.
+- violation type.
+- severity.
+- event id.
+- confidence.
+- payload JSON.
+
+* 4. 启动 PostgreSQL
+
+#+BEGIN_SRC sh
+pip install -e '.[api,db,video,yolo]'
+
+video-pose-serve \
+  --config configs/live-gstreamer-demo.yaml \
+  --database-url postgresql+psycopg://user:password@db/video_pose \
+  --audit-dir output/sessions
+#+END_SRC
+
+* 5. 查询 API
+
+配置 database-url 后:
+
+#+BEGIN_SRC text
+GET /api/v1/sessions?limit=100
+GET /api/v1/sessions/{session_id}
+#+END_SRC
+
+Session Detail 同时返回:
+
+- session.
+- actions.
+- steps.
+- violations.
+
+* 6. Schema 管理
+
+PoC 当前启动时调用 =metadata.create_all()=.
+
+正式生产下一阶段应切换 Alembic migration, 禁止依赖 create_all 做版本升级.

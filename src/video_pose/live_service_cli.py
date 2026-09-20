@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--queue-size", type=int, default=2)
     parser.add_argument("--audit-dir", default="output/sessions")
+    parser.add_argument("--database-url")
     parser.add_argument("--autostart", action="store_true")
     return parser
 
@@ -29,10 +30,22 @@ def main() -> int:
             "video-pose-serve requires the optional 'api' dependencies"
         ) from exc
 
+    repository = None
+    if args.database_url:
+        try:
+            from .sql_repository import SQLAlchemySessionRepository
+        except ImportError as exc:
+            raise RuntimeError(
+                "database persistence requires the optional 'db' dependencies"
+            ) from exc
+        repository = SQLAlchemySessionRepository(args.database_url)
+        repository.create_schema()
+
     controller = LiveSessionController(
         load_analysis_config(args.config),
         audit_root=args.audit_dir,
         processing_queue_size=args.queue_size,
+        repository=repository,
     )
     app = create_managed_live_app(
         controller,
