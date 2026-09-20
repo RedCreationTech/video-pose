@@ -1,0 +1,7 @@
+{"observation_id":"o1-front","session_id":"obs-demo-ok","camera_id":"front","timestamp_ms":0,"type":"RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.96,"relation":"FREE"}
+{"observation_id":"o2-front","session_id":"obs-demo-ok","camera_id":"front","timestamp_ms":0,"type":"ZONE_RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.95,"relation":"IN","zone":"component_bin_A"}
+{"observation_id":"o2-left","session_id":"obs-demo-ok","camera_id":"left","timestamp_ms":0,"type":"ZONE_RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.91,"relation":"IN","zone":"component_bin_A"}
+{"observation_id":"o3-left","session_id":"obs-demo-ok","camera_id":"left","timestamp_ms":1000,"type":"RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.94,"relation":"HELD_BY","target_id":"right_hand"}
+{"observation_id":"o3-right","session_id":"obs-demo-ok","camera_id":"right","timestamp_ms":1000,"type":"RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.89,"relation":"HELD_BY","target_id":"right_hand"}
+{"observation_id":"o4-front","session_id":"obs-demo-ok","camera_id":"front","timestamp_ms":2500,"type":"RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.95,"relation":"FREE"}
+{"observation_id":"o5-right","session_id":"obs-demo-ok","camera_id":"right","timestamp_ms":2500,"type":"ZONE_RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.93,"relation":"IN","zone":"assembly_zone"}

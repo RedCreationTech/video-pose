@@ -3,25 +3,29 @@
 
 * 当前阶段
 
-当前代码实现第一个可执行闭环, 并加入四路 Replay Manifest 与时间同步基础能力:
+当前代码已经形成两级可执行闭环:
 
 #+BEGIN_SRC text
-Replay JSONL
+Level A
+ActionEvent JSONL
    |
-   v
-ActionEvent Contract
-   |
-   v
 Rule Engine
    |
-   v
 Step State + Violation
+
+Level B
+Multi-view Observation
    |
-   v
-Deterministic Result JSON
+Semantic Fusion
+   |
+Explainable PICK/PLACE Baseline
+   |
+ActionEvent
+   |
+Rule Engine
 #+END_SRC
 
-真实视频模型将在后续 Sprint 以 Adapter 的方式接入, 保持 ActionEvent 和 Rule Engine 契约不变.
+真实视频模型后续通过 Adapter 接入, 保持 Observation 和 ActionEvent 两层契约稳定.
 
 * 快速开始
 
@@ -43,6 +47,23 @@ from video_pose.video_manifest import load_manifest
 print(load_manifest("fixtures/replay/session-manifest.yaml"))
 PY2
 #+END_SRC
+
+* Observation Replay
+
+#+BEGIN_SRC sh
+python - <<'PY2'
+from video_pose.observation_replay import run_observation_replay
+
+result = run_observation_replay(
+    "fixtures/observations/pick-place-compliant.jsonl",
+    "fixtures/rules/pick-place.yaml",
+)
+print(result.model_dump_json(indent=2))
+PY2
+#+END_SRC
+
+这里的 PICK/PLACE recognizer 是可解释 baseline. 后续 Temporal Model, YOLO 和 RTMPose
+只需要产出相同 Observation/ActionEvent 契约, 不需要改写 Rule Engine.
 
 * 文档
 

@@ -1,0 +1,5 @@
+{"observation_id":"o1","session_id":"obs-demo-bad","camera_id":"front","timestamp_ms":0,"type":"RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.96,"relation":"FREE"}
+{"observation_id":"o2","session_id":"obs-demo-bad","camera_id":"front","timestamp_ms":0,"type":"ZONE_RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.95,"relation":"IN","zone":"component_bin_A"}
+{"observation_id":"o3","session_id":"obs-demo-bad","camera_id":"left","timestamp_ms":1000,"type":"RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.94,"relation":"HELD_BY","target_id":"right_hand"}
+{"observation_id":"o4","session_id":"obs-demo-bad","camera_id":"front","timestamp_ms":2500,"type":"RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.95,"relation":"FREE"}
+{"observation_id":"o5","session_id":"obs-demo-bad","camera_id":"right","timestamp_ms":2500,"type":"ZONE_RELATION","entity_id":"part-1","entity_class":"component_A","confidence":0.93,"relation":"IN","zone":"reject_bin"}
