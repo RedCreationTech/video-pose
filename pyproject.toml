@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-pose"
-version = "0.2.0"
+version = "0.3.0"
 description = "Multi-view action compliance detection core for Video Pose"
 readme = {file = "README.org", content-type = "text/plain"}
 requires-python = ">=3.11"
@@ -31,6 +31,7 @@ mmpose = [
 
 [project.scripts]
 video-pose-replay = "video_pose.cli:main"
+video-pose-analyze = "video_pose.analyze_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/video_pose"]

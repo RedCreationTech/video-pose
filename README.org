@@ -1,36 +1,35 @@
 #+TITLE: Video Pose
 #+SUBTITLE: 多视角人员动作规范检测平台
 
-* 当前阶段
-
-系统已经具备 Perception Service V1 的模型接入骨架:
+* 当前闭环
 
 #+BEGIN_SRC text
-4-View Video
-   |
-ReplayPlanner / FrameLoader
-   |
-YOLO Detector Adapter
-   |
-Person + Tool Detection
-   |
-Operator IoU Tracking
-   |
-RTMPose Top-down Adapter
-   |
+4路录像 / RTSP-ready architecture
+       |
+Frame Timestamp Sync
+       |
+FrameLoader
+       |
+YOLO Detector
+       |
+Person + Object Tracking
+       |
+RTMPose
+       |
 Observation
-   |
-Multi-view Fusion
-   |
-Action Recognition
-   |
+       |
+Planar World Projection
+       |
+Multi-view World Identity
+       |
+Zone + Human-Object Relations
+       |
+PICK / PLACE ActionEvent
+       |
 Rule Engine
-   |
-Violation / Score
+       |
+Violation / Score / Evidence-ready result
 #+END_SRC
-
-核心业务不直接依赖 Ultralytics 或 MMPose. 模型层通过 adapter 输出
-=Detection / PoseEstimate / Observation=.
 
 * 安装
 
@@ -46,45 +45,60 @@ pip install -e '.[dev]'
 pip install -e '.[dev,video,yolo]'
 #+END_SRC
 
-MMPose:
+MMPose 需要根据目标 PyTorch/CUDA 环境安装兼容 MMCV.
 
-#+BEGIN_SRC sh
-pip install -e '.[mmpose]'
-#+END_SRC
+* 离线真实视频分析
 
-MMPose/MMCV/PyTorch/CUDA 的版本必须按照目标 GPU 环境固定, 生产部署不建议
-依赖 pip 自动猜测 CUDA 组合.
-
-* 测试
-
-#+BEGIN_SRC sh
-pytest
-ruff check src tests
-#+END_SRC
-
-GitHub Actions 在 main 上执行 Install, Lint, Test 和 Replay smoke test.
-
-* 模型配置
-
-第一版 manifest:
+配置入口:
 
 #+BEGIN_SRC text
-models/manifests/perception-v1.yaml
+configs/offline-demo.yaml
 #+END_SRC
 
-模型权重不提交 Git.
+准备:
 
-* 当前边界
+- 四路录像.
+- YOLO 工具/工件权重.
+- RTMPose config/checkpoint.
+- calibration.
+- zones.
+- rules.
 
-已完成:
+执行:
 
-- 四路帧时间同步.
-- 视频取帧接口.
-- YOLO 检测适配器.
-- 单工位操作员 tracking.
-- RTMPose top-down 适配器.
-- Person/Object/Body keypoint Observation.
-- Observation -> ActionEvent -> Rule Engine.
+#+BEGIN_SRC sh
+video-pose-analyze \
+  --config configs/offline-demo.yaml \
+  --output result.json
+#+END_SRC
 
-下一关键节点是 Human-Object Relation Builder, 将手腕/手部关键点与工具轨迹结合,
-稳定生成 =NEAR / HELD_BY / TOUCHING=, 从而让真实视频直接驱动 PICK/PLACE.
+只跑少量同步帧做环境检查:
+
+#+BEGIN_SRC sh
+video-pose-analyze \
+  --config configs/offline-demo.yaml \
+  --max-frame-sets 100
+#+END_SRC
+
+退出码:
+
+- 0: 有评估结果且通过.
+- 2: 有评估结果但不通过.
+- 3: 没有产生可评估动作.
+
+* 当前 MVP 空间模型
+
+现在支持平面 Homography, 适合工作台型工位.
+
+下一阶段是完整 3D:
+
+- camera intrinsic/extrinsic.
+- distortion correction.
+- epipolar matching.
+- triangulation.
+- reprojection error.
+- calibration health.
+
+* 文档
+
+详细设计见 =docs/=.
