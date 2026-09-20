@@ -1,0 +1,184 @@
+#+TITLE: Video Pose Design Documentation Index
+#+SUBTITLE: C4 Model 与详细设计文档索引
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:2 num:t
+
+* 1. 文档地图
+
+Video Pose 是一个多视角视频驱动的人员动作规范检测平台.
+
+设计文档采用 C4 Model 自顶向下组织.
+
+#+BEGIN_SRC text
+C4 Level 1
+System Context
+  |
+  v
+C4 Level 2
+Containers
+  |
+  v
+C4 Level 3
+Components
+  |
+  +--> Action Domain Model
+  +--> Rule Engine
+  +--> Data Model
+  +--> API Contract
+  +--> Deployment
+  +--> Verification
+  +--> MVP Plan
+#+END_SRC
+
+* 2. 文档清单
+
+| 文档 | 作用 |
+| [[file:video-pose-system-architecture.org][video-pose-system-architecture.org]] | C4 L1-L3 总体架构 |
+| [[file:video-pose-action-model.org][video-pose-action-model.org]] | 动作语义, 多视角证据, SOP 状态模型 |
+| [[file:video-pose-rule-engine-design.org][video-pose-rule-engine-design.org]] | 规则 DSL, CEP, 状态机, 可解释判定 |
+| [[file:video-pose-database-design.org][video-pose-database-design.org]] | PostgreSQL, Redis, MinIO, 事件与数据生命周期 |
+| [[file:video-pose-api-design.org][video-pose-api-design.org]] | REST, WebSocket, gRPC, Event Contract |
+| [[file:video-pose-deployment-design.org][video-pose-deployment-design.org]] | C4 Deployment, Edge GPU, Camera Pipeline |
+| [[file:video-pose-test-plan.org][video-pose-test-plan.org]] | 模型, 规则, E2E, 性能和现场验收 |
+| [[file:video-pose-mvp-development-plan.org][video-pose-mvp-development-plan.org]] | Sprint, DoD, 数据采集和开发里程碑 |
+
+* 3. C4 System Context
+
+参与者:
+
+- Operator.
+- Supervisor.
+- Process Engineer.
+- Reviewer.
+- System Administrator.
+
+外部系统:
+
+- Camera/ONVIF.
+- MES.
+- PLM/SOP.
+- Personnel System.
+- PLC/SCADA optional.
+- Enterprise Data Platform.
+
+核心系统:
+
+#+BEGIN_SRC text
+Video Pose AI Platform
+#+END_SRC
+
+* 4. C4 Container Catalog
+
+| ID | Container | 职责 |
+| C01 | Video Gateway | 四路视频接入, 时间戳, 缓存, 录像 |
+| C02 | Perception Service | 人, 工具, 工件, 关键点检测 |
+| C03 | Pose Fusion Service | 多视角关联, 2D/3D 空间融合 |
+| C04 | Action Recognition Service | 时间序列动作识别 |
+| C05 | Rule Engine | SOP, 时间, 顺序, 空间和安全规则 |
+| C06 | Evaluation Service | 评分, 结果, 报告 |
+| C07 | API & Control Service | 会话和系统管理 API |
+| C08 | Web Console | 实时监控, 配置和复盘 |
+| C09 | Data Storage | PostgreSQL, Redis, MinIO |
+| C10 | Model/Config Service | 模型和配置版本管理 |
+
+* 5. 核心实时链路
+
+#+BEGIN_SRC text
+Cameras
+  |
+  v
+C01 Video Gateway
+  |
+  v
+C02 Perception
+  |
+  v
+C03 Pose Fusion
+  |
+  v
+C04 Action Recognition
+  |
+  v
+C05 Rule Engine
+  |
+  v
+C06 Evaluation
+  |
+  +----> C08 Web Console
+  |
+  +----> C09 Storage
+#+END_SRC
+
+* 6. 最重要的架构决策
+
+** ADR-001: AI 不直接负责最终合规结论
+
+AI 输出事实和动作概率. 合规由版本化规则判断.
+
+** ADR-002: 多视角使用统一时间和世界坐标
+
+四路摄像头不是四个独立结果面板. 它们需要形成同一个 Session 的多视角证据.
+
+** ADR-003: UNKNOWN 是合法业务状态
+
+不可见和低置信度不等于合规, 也不等于违规.
+
+** ADR-004: 原始视频和业务数据分层存储
+
+关系数据库不保存全部视频帧和高频 Pose.
+
+** ADR-005: Evidence First
+
+所有违规必须可以回到视频证据和规则 trace.
+
+** ADR-006: Replay First
+
+同一批录像必须能够脱离现场摄像头重复跑完整 pipeline, 作为持续回归基础.
+
+* 7. 开发阅读顺序
+
+首次进入项目建议:
+
+#+BEGIN_SRC text
+1. system-architecture
+2. action-model
+3. rule-engine-design
+4. database-design
+5. api-design
+6. deployment-design
+7. test-plan
+8. mvp-development-plan
+#+END_SRC
+
+* 8. MVP 边界
+
+第一阶段只承诺:
+
+- 单工位.
+- 单操作员.
+- 前后左右四路摄像头.
+- 单一标准作业.
+- 5-10 个步骤.
+- 5-10 类核心动作.
+- 3 类以上违规.
+- 自动评分.
+- 证据回放.
+
+MVP 不承诺通用动作理解和完全无盲区检测.
+
+* 9. 设计变更规则
+
+涉及以下内容的 PR 应同步更新设计文档:
+
+- Container 边界.
+- ActionEvent schema.
+- Rule DSL.
+- Session 状态机.
+- 数据库 schema.
+- 外部 API.
+- 事件协议.
+- 模型版本策略.
+- 验收指标.
+
+重大设计变化建议增加 ADR.

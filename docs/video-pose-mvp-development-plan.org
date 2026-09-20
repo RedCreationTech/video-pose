@@ -1,0 +1,624 @@
+#+TITLE: Video Pose MVP Development Plan
+#+SUBTITLE: 从四路视频到动作规范检测闭环的开发计划
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. MVP 目标
+
+MVP 不是完成通用人体动作理解平台.
+
+MVP 只验证一个明确闭环:
+
+#+BEGIN_SRC text
+4 Cameras
+   |
+Person + Tool + Pose
+   |
+Multi-view Evidence
+   |
+5-10 Action Atoms
+   |
+1 Standard Operation
+   |
+Rule Engine
+   |
+Violation + Score + Evidence Replay
+#+END_SRC
+
+完成标准:
+
+- 一个真实工位.
+- 四路摄像头.
+- 一个操作员.
+- 一个标准 SOP.
+- 5-10 个步骤.
+- 至少 3 类故意违规.
+- 自动生成结果和证据.
+- 能够用固定视频集重复回归.
+
+* 2. C4 实现映射
+
+MVP 容器:
+
+| ID | Container | MVP |
+| C01 | Video Gateway | 必须 |
+| C02 | Perception Service | 必须 |
+| C03 | Pose Fusion Service | 必须, 可先轻量 |
+| C04 | Action Recognition Service | 必须 |
+| C05 | Rule Engine | 必须 |
+| C06 | Evaluation Service | 必须 |
+| C07 | API & Control Service | 必须 |
+| C08 | Web Console | 必须 |
+| C09 | Data Storage | 必须 |
+| C10 | Training/Model Platform | 简化 |
+
+* 3. 技术基线
+
+建议 MVP:
+
+** AI
+
+- Python 3.12.
+- PyTorch.
+- Ultralytics YOLO 或 MMDetection.
+- MMPose/RTMPose.
+- OpenCV.
+- ONNX Runtime/TensorRT 后续优化.
+
+** Video
+
+- GStreamer.
+- FFmpeg.
+
+** Backend
+
+- FastAPI.
+- Pydantic.
+- PostgreSQL.
+- Redis.
+- MinIO.
+- NATS/Redpanda 可在事件量需要时引入.
+
+** Frontend
+
+- Vue 3.
+- TypeScript.
+- Vite.
+- ECharts.
+- WebSocket.
+
+** DevOps
+
+- Docker Compose.
+- pytest.
+- Ruff.
+- mypy.
+- Playwright.
+- Prometheus/Grafana.
+- OpenTelemetry.
+
+* 4. Repository 建议结构
+
+#+BEGIN_SRC text
+video-pose/
+  docs/
+  services/
+    video-gateway/
+    perception/
+    pose-fusion/
+    action-engine/
+    rule-engine/
+    evaluation/
+    api/
+  web/
+  packages/
+    contracts/
+    rule-dsl/
+    common/
+  models/
+    manifests/
+  openapi/
+  proto/
+  schemas/
+  migrations/
+  tests/
+    unit/
+    integration/
+    replay/
+    e2e/
+    data-manifests/
+  deploy/
+    compose/
+    edge/
+  scripts/
+#+END_SRC
+
+* 5. Sprint 0: 工程和数据基线
+
+目标:
+
+让团队可以稳定开发和重放视频.
+
+任务:
+
+- 初始化 monorepo.
+- Python/Node 版本锁定.
+- Docker Compose.
+- PostgreSQL/Redis/MinIO.
+- CI.
+- 代码格式化.
+- 单元测试框架.
+- 视频 fixture manifest.
+- 定义 1 个目标 SOP.
+- 明确 3-5 个关键工具.
+- 明确 5-10 个 ActionAtom.
+- 安装四路摄像头.
+- 首次标定.
+- 采集第一批标准/错误视频.
+
+交付:
+
+#+BEGIN_SRC text
+docker compose up
+pytest
+web dev server
+four-camera replay tool
+#+END_SRC
+
+DoD:
+
+- 新开发机 30 分钟内能启动开发环境.
+- 4 路录像可同步回放.
+- 已有不少于 20 个标注短视频.
+
+* 6. Sprint 1: Video Gateway
+
+目标:
+
+稳定接入四路视频.
+
+任务:
+
+- RTSP discovery/config.
+- GStreamer pipeline.
+- 硬件解码.
+- 时间戳归一化.
+- ring buffer.
+- reconnect.
+- camera health.
+- 录像切片.
+- Web 低码率 preview.
+
+接口:
+
+#+BEGIN_SRC text
+CameraFrameMetadata
+CameraHealth
+RecorderCommand
+EvidenceClipRequest
+#+END_SRC
+
+DoD:
+
+- 4 路 1080P@25FPS 连续 8 h.
+- 断流自动恢复.
+- UI 可看到 4 路预览.
+- 能按 timestamp 截取证据片段.
+
+* 7. Sprint 2: Person/Object/Pose
+
+目标:
+
+从视频稳定输出基础视觉事实.
+
+任务:
+
+- person detector.
+- operator tracker.
+- object/tool detector.
+- body pose.
+- hand ROI.
+- observation schema.
+- model manifest.
+- visualization overlay.
+- offline evaluator.
+
+DoD:
+
+- 在目标工位能稳定跟踪唯一操作员.
+- 关键工具达到约定 Precision/Recall.
+- wrist/elbow 关键点达到可用水平.
+- 每个 Observation 带 model version.
+
+* 8. Sprint 3: Camera Calibration and Fusion
+
+目标:
+
+把四视角对齐到统一时空.
+
+任务:
+
+- intrinsic calibration.
+- extrinsic calibration.
+- world coordinate.
+- zone editor data model.
+- clock offset monitor.
+- multi-view association.
+- 3D wrist/object position MVP.
+- occlusion state.
+
+DoD:
+
+- 同一测试点四视角映射一致.
+- 3D 位置误差达到测试方案阈值.
+- 任一路遮挡时其余视角可继续提供证据.
+
+* 9. Sprint 4: Action Engine
+
+目标:
+
+将视觉事实转换为 ActionEvent.
+
+首批动作:
+
+- REACH.
+- GRASP.
+- PICK.
+- MOVE.
+- PLACE.
+- ROTATE.
+- OPERATE_TOOL.
+- INSPECT.
+
+任务:
+
+- feature assembler.
+- temporal window.
+- heuristic baseline.
+- temporal model interface.
+- multi-view confidence fusion.
+- ActionEvent schema.
+- offline replay evaluator.
+
+重要策略:
+
+先做 heuristic/geometry baseline, 再训练 Temporal Model. 这样能更快形成业务闭环并建立可解释基线.
+
+DoD:
+
+- Golden action clips 可自动产生 ActionEvent.
+- 每个事件有 start/end/confidence/evidence.
+- 不确定时能够输出 UNKNOWN.
+
+* 10. Sprint 5: Rule Engine
+
+目标:
+
+完成 SOP 合规判断.
+
+任务:
+
+- rule DSL.
+- parser/validator.
+- workflow state machine.
+- temporal window.
+- sequence constraints.
+- object/tool constraints.
+- zone constraints.
+- three-valued logic.
+- violation.
+- trace.
+- replay.
+
+DoD:
+
+- 一套 5-10 步 SOP 可配置.
+- 3 类违规可稳定识别.
+- 相同 ActionEvent 重放结果 100% 一致.
+- 每个 violation 有规则 trace.
+
+* 11. Sprint 6: Evaluation and Evidence
+
+目标:
+
+让系统输出人能理解的结果.
+
+任务:
+
+- step execution.
+- violation summary.
+- scoring.
+- evidence clip generation.
+- four-view synchronized playback.
+- pose overlay.
+- final report JSON.
+
+DoD:
+
+- 完成 session 后自动生成评分.
+- 可以点击违规跳转到对应视频时间点.
+- 可查看期望动作, 实际动作和触发规则.
+
+* 12. Sprint 7: Web Console
+
+页面:
+
+1. 工位首页.
+2. 四路实时画面.
+3. 当前操作步骤.
+4. 实时动作事件.
+5. 实时违规.
+6. Session 历史.
+7. Session 复盘.
+8. Rule/SOP 配置.
+9. Camera/Calibration 状态.
+10. Model status.
+
+工业客户端风格:
+
+- 信息密度高.
+- 状态颜色稳定.
+- 不使用大量动画.
+- 关键异常突出.
+- 支持大屏和 1080P 工位屏.
+
+* 13. Sprint 8: E2E Hardening
+
+任务:
+
+- Golden Replay.
+- 72 h run.
+- fault injection.
+- camera reconnect.
+- center disconnect.
+- disk pressure.
+- GPU OOM recovery.
+- API auth.
+- audit log.
+- backup/restore.
+- performance profile.
+
+DoD:
+
+达到 =video-pose-test-plan.org= 的 Go/No-Go gate.
+
+* 14. 任务优先级
+
+P0:
+
+- 四路稳定视频.
+- 时间同步.
+- 人和工具识别.
+- ActionEvent.
+- SOP state machine.
+- violation.
+- evidence.
+- replay test.
+
+P1:
+
+- 3D pose.
+- sophisticated temporal model.
+- Web rule editor.
+- model registry.
+- multi-workstation.
+
+P2:
+
+- natural language SOP.
+- LLM review.
+- advanced analytics.
+- automatic rule mining.
+
+* 15. 不建议在 MVP 做的内容
+
+- 通用数百类动作识别.
+- 多人复杂交互.
+- 云端全量视频实时推理.
+- 完整 Kubernetes 平台.
+- 自研基础视觉大模型.
+- 用 LLM 直接做实时最终合规判定.
+- 在没有数据基线时追求 99.9% 指标.
+
+* 16. 数据采集计划
+
+第一轮:
+
+- 5 人.
+- 每人 20 个合规 session.
+- 每人 10 个错误 session.
+- 约 150 个 session.
+
+错误类型至少:
+
+- wrong tool.
+- missing step.
+- wrong order.
+- wrong zone.
+- timeout.
+
+第二轮:
+
+加入:
+
+- 遮挡.
+- 不同速度.
+- 不同工作服.
+- 左右手变化.
+- 光照变化.
+
+* 17. 标注规范
+
+标注文件至少包含:
+
+#+BEGIN_SRC text
+session
+camera
+action_start
+action_end
+action_type
+object_class
+step
+violation
+visibility
+annotator
+review_status
+#+END_SRC
+
+标注工具:
+
+- CVAT.
+- Label Studio.
+
+* 18. 模型策略
+
+** Baseline
+
+使用现成模型 + 几何/时序规则.
+
+** V1
+
+对目标工具做 fine-tune.
+
+** V2
+
+训练短窗口动作模型.
+
+** V3
+
+基于更多现场数据训练 Human-Object Interaction 模型.
+
+始终保留 baseline, 用于回归和故障定位.
+
+* 19. CI/CD
+
+PR 必须运行:
+
+- lint.
+- type check.
+- unit tests.
+- rule fixture.
+- schema compatibility.
+- API contract test.
+
+main/nightly:
+
+- integration.
+- golden replay.
+- selected video regression.
+
+release:
+
+- full golden replay.
+- benchmark.
+- container scan.
+- image signing.
+- model checksum.
+
+* 20. Definition of Done
+
+每个功能不是"代码写完"即完成.
+
+DoD:
+
+- code.
+- unit test.
+- integration test.
+- metric.
+- log.
+- error handling.
+- API/schema.
+- documentation.
+- replay sample.
+- acceptance criteria.
+
+* 21. 关键风险
+
+** 风险 1: 手部和工具遮挡
+
+缓解:
+
+- 侧视角.
+- ROI camera optional.
+- object relation + pose fusion.
+- UNKNOWN.
+
+** 风险 2: 相似工具误识别
+
+缓解:
+
+- 训练专用 detector.
+- 工具架固定位置.
+- marker/颜色辅助.
+- 二次确认.
+
+** 风险 3: 四路时间不同步
+
+缓解:
+
+- NTP/PTP.
+- offset monitor.
+- fusion tolerance window.
+
+** 风险 4: 动作定义模糊
+
+缓解:
+
+先建立 SOP 领域模型和动作词典, 再训练模型.
+
+** 风险 5: 现场指标无法达到
+
+缓解:
+
+- 先固定单工位.
+- 收集 hard cases.
+- 把不可观测情况显式归类.
+- 不使用平均指标掩盖关键违规漏检.
+
+* 22. 里程碑
+
+M0:
+工程可启动, 数据可回放.
+
+M1:
+四路视频稳定.
+
+M2:
+人/工具/Pose 可视化.
+
+M3:
+多视角时空对齐.
+
+M4:
+动作事件闭环.
+
+M5:
+SOP/规则闭环.
+
+M6:
+评分/证据/Web 闭环.
+
+M7:
+Golden Replay + 72 h 稳定性通过.
+
+M8:
+现场试运行.
+
+* 23. MVP 成功标准
+
+最终演示必须可以完整展示:
+
+#+BEGIN_SRC text
+1. 选择一个标准作业.
+2. 开始 Session.
+3. 四路画面同步显示.
+4. 系统识别人, 工具和动作.
+5. UI 实时推进 SOP 步骤.
+6. 故意拿错工具.
+7. 系统产生违规并定位证据.
+8. 继续完成作业.
+9. 自动生成评分.
+10. 打开复盘页面查看四视角证据.
+11. 用相同录像 replay, 得到一致结果.
+#+END_SRC

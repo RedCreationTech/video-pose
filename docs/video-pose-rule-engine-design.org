@@ -1,0 +1,580 @@
+#+TITLE: Video Pose Rule Engine Design
+#+SUBTITLE: 动作规范规则引擎, 状态机与可解释判定设计
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 文档目标
+
+本文定义 Video Pose 系统中规则引擎的详细设计.
+
+规则引擎是最终"规范性判定"的主要执行者. AI 模型负责生成感知事实和动作事件, 规则引擎负责把这些事实映射到 SOP 步骤, 约束和违规结果.
+
+核心目标:
+
+- 可配置.
+- 可版本化.
+- 可解释.
+- 可重放.
+- 可审计.
+- 对不确定输入保持 UNKNOWN.
+- 支持时间, 顺序, 空间, 对象, 工具和安全规则.
+- 规则更新不要求重新训练视觉模型.
+
+* 2. C4 Component 定位
+
+#+BEGIN_SRC text
+[C04 Action Recognition Service]
+          |
+          | ActionEvent
+          v
++----------------------------------------------------+
+| C05 Rule Engine                                   |
+|                                                    |
+| R01 Rule Definition Repository                     |
+| R02 Event Ingress                                  |
+| R03 Session Context                                |
+| R04 Temporal Window / CEP                          |
+| R05 Workflow State Machine                         |
+| R06 Constraint Evaluator                           |
+| R07 Conflict Resolver                              |
+| R08 Explanation Builder                            |
+| R09 Result Publisher                               |
++----------------------------------------------------+
+          |
+          +------> [C06 Evaluation Service]
+          |
+          +------> [C09 Storage]
+#+END_SRC
+
+* 3. 输入和输出
+
+输入:
+
+- ActionEvent.
+- ObjectObservation.
+- ZoneRelation.
+- DeviceSignal.
+- SessionLifecycleEvent.
+- ManualReviewEvent.
+
+输出:
+
+- StepStateChanged.
+- ViolationDetected.
+- ReviewRequested.
+- RuleEvaluationTrace.
+- SessionComplianceResult.
+
+* 4. 规则执行模型
+
+采用"事件驱动 + 有限状态机 + 时间窗口"模型.
+
+#+BEGIN_SRC text
+Event
+  |
+  v
+Event Ingress
+  |
+  v
+Session Context
+  |
+  +----> Temporal Window
+  |
+  +----> Workflow State Machine
+  |
+  v
+Constraint Evaluator
+  |
+  v
+Conflict Resolver
+  |
+  v
+Decision + Explanation
+#+END_SRC
+
+不建议 MVP 阶段直接引入重量级 Drools. 第一阶段可实现一个受控 DSL, 保持规则能力和可维护性之间的平衡.
+
+* 5. 规则 DSL
+
+规则建议使用 YAML 或 JSON 作为存储格式. 业务编辑器对用户呈现表单和流程图.
+
+示例:
+
+#+BEGIN_SRC yaml
+id: R-S030-TOOL-01
+name: S030必须使用扭矩扳手
+version: 3
+enabled: true
+scope:
+  operation: assembly_A
+  step: S030
+
+when:
+  event:
+    type: PICK
+    object_class: "*"
+
+then:
+  require:
+    - field: event.object.class
+      operator: EQ
+      value: torque_wrench
+
+on_pass:
+  emit: STEP_EVIDENCE
+
+on_fail:
+  violation:
+    type: WRONG_TOOL
+    severity: MAJOR
+    message: "步骤S030使用了错误工具"
+#+END_SRC
+
+* 6. 基础操作符
+
+** 6.1 比较操作符
+
+- EQ.
+- NE.
+- GT.
+- GTE.
+- LT.
+- LTE.
+- IN.
+- NOT_IN.
+- EXISTS.
+
+** 6.2 空间操作符
+
+- IN_ZONE.
+- OUTSIDE_ZONE.
+- NEAR.
+- DISTANCE_LT.
+- DISTANCE_GT.
+- HELD_BY.
+- TOUCHING.
+
+** 6.3 时间操作符
+
+- BEFORE.
+- AFTER.
+- WITHIN.
+- FOR_AT_LEAST.
+- FOR_AT_MOST.
+- OVERLAPS.
+- STABLE_FOR.
+- NOT_OCCURRED_WITHIN.
+
+** 6.4 序列操作符
+
+- PREVIOUS_STEP.
+- COMPLETED_BEFORE.
+- REQUIRED_PREDECESSOR.
+- NO_INTERVENING_ACTION.
+- OCCURRED_N_TIMES.
+
+* 7. Rule Definition
+
+规则定义字段:
+
+| 字段 | 必填 | 说明 |
+| id | 是 | 稳定业务标识 |
+| version | 是 | 整数版本 |
+| name | 是 | 名称 |
+| description | 否 | 业务说明 |
+| operation_id | 是 | 所属操作 |
+| step_id | 否 | 所属步骤 |
+| enabled | 是 | 是否启用 |
+| priority | 是 | 优先级 |
+| severity | 否 | 违规严重度 |
+| when | 是 | 触发条件 |
+| require | 是 | 约束集合 |
+| on_pass | 否 | 通过动作 |
+| on_fail | 否 | 失败动作 |
+| effective_from | 是 | 生效时间 |
+| effective_to | 否 | 失效时间 |
+
+* 8. Session Context
+
+每个运行会话维护独立上下文.
+
+#+BEGIN_SRC text
+SessionContext
+ |
+ +-- current_workflow_state
+ +-- completed_steps
+ +-- active_steps
+ +-- recent_action_events
+ +-- object_bindings
+ +-- operator_tracking_state
+ +-- device_signals
+ +-- uncertainty_state
+ +-- applied_rule_versions
+#+END_SRC
+
+上下文必须可以快照化和恢复.
+
+* 9. Workflow State Machine
+
+状态机负责步骤生命周期.
+
+#+BEGIN_SRC text
+PENDING
+  |
+  | predecessor completed
+  v
+READY
+  |
+  | first matching evidence
+  v
+ACTIVE
+ /  |   \
+v   v    v
+COMPLETED VIOLATED UNKNOWN
+#+END_SRC
+
+规则引擎必须阻止非法状态跃迁.
+
+示例:
+
+- PENDING -> COMPLETED, 默认非法.
+- READY -> COMPLETED, 合法.
+- ACTIVE -> VIOLATED, 合法.
+- UNKNOWN -> COMPLETED, 需要新证据或人工复核.
+
+* 10. CEP 时间窗口
+
+每个会话建立环形事件窗口.
+
+MVP 默认:
+
+#+BEGIN_SRC text
+short window  = 2 s
+medium window = 10 s
+long window   = 60 s
+session window = full session metadata only
+#+END_SRC
+
+高频原始 pose 不进入规则引擎. Pose Engine/Action Engine 先降维成事件.
+
+时间窗口需要支持:
+
+- 滚动窗口.
+- 固定窗口.
+- 从步骤激活开始计算的业务窗口.
+- debounce.
+- timeout.
+
+* 11. 顺序规则
+
+示例:
+
+#+BEGIN_SRC yaml
+id: R-S040-ORDER-01
+when:
+  step: S040
+require:
+  - completed_before: S020
+  - completed_before: S030
+on_fail:
+  violation:
+    type: ORDER
+    severity: MAJOR
+#+END_SRC
+
+对于允许并行的步骤, 使用 predecessor group.
+
+#+BEGIN_SRC text
+ALL_OF:
+  S020
+  S021
+
+ANY_OF:
+  S030
+  S031
+#+END_SRC
+
+* 12. 空间规则
+
+示例:
+
+#+BEGIN_SRC yaml
+id: R-S040-ZONE-01
+when:
+  action: OPERATE_TOOL
+require:
+  - subject: event.object
+    operator: IN_ZONE
+    value: assembly_zone
+    stable_for_ms: 300
+#+END_SRC
+
+空间规则应使用世界坐标和 Zone, 避免直接写像素坐标.
+
+* 13. 工具与对象规则
+
+对象绑定支持:
+
+#+BEGIN_SRC text
+class constraint
+instance constraint
+serial number constraint
+color/marker constraint
+source zone constraint
+target zone constraint
+#+END_SRC
+
+示例:
+
+#+BEGIN_SRC yaml
+require:
+  - field: event.object.class
+    operator: EQ
+    value: torque_wrench
+  - relation:
+      subject: event.object.id
+      operator: HELD_BY
+      value: operator.right_hand
+#+END_SRC
+
+* 14. 安全规则
+
+安全规则具有更高优先级.
+
+示例:
+
+#+BEGIN_SRC yaml
+id: R-SAFETY-001
+priority: 1000
+when:
+  relation:
+    actor: operator.hand
+    zone: forbidden_zone
+    state: IN
+require:
+  - device_signal:
+      name: machine_running
+      operator: EQ
+      value: false
+on_fail:
+  violation:
+    type: SAFETY
+    severity: CRITICAL
+  action:
+    emit: SAFETY_ALERT
+#+END_SRC
+
+系统默认只提供告警和外部联锁事件. 是否实际停机必须由独立安全系统和现场安全设计决定, 不能让普通 AI 服务直接承担 SIL 安全功能.
+
+* 15. 不确定性传播
+
+输入事件包含 confidence.
+
+规则引擎不把低置信度事件直接当作 false.
+
+三值逻辑:
+
+#+BEGIN_SRC text
+TRUE
+FALSE
+UNKNOWN
+#+END_SRC
+
+例如:
+
+#+BEGIN_SRC text
+tool.class = torque_wrench
+
+confidence >= threshold -> TRUE
+conflicting evidence    -> UNKNOWN
+confirmed wrong tool    -> FALSE
+#+END_SRC
+
+三值组合:
+
+| A | B | A AND B |
+| TRUE | TRUE | TRUE |
+| TRUE | UNKNOWN | UNKNOWN |
+| FALSE | UNKNOWN | FALSE |
+| UNKNOWN | UNKNOWN | UNKNOWN |
+
+* 16. 冲突处理
+
+可能出现:
+
+- 两个规则对同一事件给出不同结论.
+- 两个模型版本产生冲突事件.
+- 多视角证据冲突.
+- 安全规则和业务规则冲突.
+
+优先级:
+
+#+BEGIN_SRC text
+Safety Critical Rule
+  >
+Explicit SOP Rule
+  >
+Operation Default Rule
+  >
+Advisory Rule
+#+END_SRC
+
+同优先级冲突时:
+
+1. 不自动覆盖.
+2. 标记 DECISION_CONFLICT.
+3. 保存双方 trace.
+4. 必要时进入人工复核.
+
+* 17. RuleEvaluationTrace
+
+每次规则命中保存可解释 trace.
+
+#+BEGIN_SRC json
+{
+  "trace_id": "trace-001",
+  "session_id": "session-001",
+  "rule_id": "R-S030-TOOL-01",
+  "rule_version": 3,
+  "input_event_ids": ["act-001"],
+  "conditions": [
+    {
+      "expression": "event.object.class == torque_wrench",
+      "actual": "open_end_wrench",
+      "result": "FALSE"
+    }
+  ],
+  "decision": "VIOLATION",
+  "evaluated_at": "2026-09-20T12:00:00Z",
+  "latency_ms": 3.4
+}
+#+END_SRC
+
+* 18. 规则版本管理
+
+规则发布流程:
+
+#+BEGIN_SRC text
+DRAFT
+  |
+  v
+VALIDATED
+  |
+  v
+PUBLISHED
+  |
+  v
+ACTIVE
+  |
+  v
+RETIRED
+#+END_SRC
+
+要求:
+
+- ACTIVE 规则不可原地修改.
+- 修改后创建新 version.
+- 运行中的 session 固定 rule_set_version.
+- 支持历史 session 使用旧版本重放.
+
+* 19. 规则校验
+
+发布前执行:
+
+- 语法校验.
+- 字段类型校验.
+- 引用的 step/zone/object class 是否存在.
+- 不可达步骤检测.
+- 状态机死循环检测.
+- 冲突规则静态检查.
+- 安全规则覆盖检查.
+- 单元测试用例执行.
+
+* 20. 规则 API 边界
+
+规则引擎对外提供内部 API:
+
+#+BEGIN_SRC text
+POST /internal/rule-engine/sessions/{id}/events
+GET  /internal/rule-engine/sessions/{id}/state
+POST /internal/rule-engine/sessions/{id}/replay
+POST /internal/rule-engine/rules/validate
+POST /internal/rule-engine/rules/publish
+#+END_SRC
+
+实时主链路建议使用事件总线, REST 主要用于管理和调试.
+
+* 21. 性能目标
+
+MVP:
+
+| 指标 | 目标 |
+| 单事件规则处理 P95 | < 20 ms |
+| 单事件规则处理 P99 | < 50 ms |
+| 单会话并行规则数 | >= 200 |
+| 单节点活跃会话 | >= 20 |
+| 规则重放确定性 | 100% |
+| 规则审计 trace 完整率 | 100% |
+
+* 22. 失败与降级
+
+事件总线中断:
+
+- 本地缓冲.
+- 恢复后按 event sequence replay.
+- 不允许无序重复造成二次扣分.
+
+规则引擎崩溃:
+
+- 从 session snapshot 恢复.
+- 从最后 offset 重放.
+
+模型输出中断:
+
+- session 状态保持 UNKNOWN/DEGRADED.
+- 不自动判定合格.
+
+* 23. 测试设计
+
+规则单测按 Given/When/Then 描述.
+
+#+BEGIN_SRC text
+Given:
+S020 completed
+operator picks open_end_wrench
+
+When:
+R-S030-TOOL-01 evaluates
+
+Then:
+WRONG_TOOL violation emitted
+severity = MAJOR
+step S030 != COMPLETED
+#+END_SRC
+
+必须覆盖:
+
+- 正常路径.
+- 漏步骤.
+- 错顺序.
+- 错工具.
+- 超时.
+- 低置信度.
+- 遮挡 UNKNOWN.
+- 重复事件幂等.
+- 重放一致.
+- 冲突规则.
+
+* 24. MVP 实现建议
+
+推荐实现:
+
+- Java/Kotlin, Go, Python 均可.
+- 如果主要 AI 服务采用 Python, MVP 可先用 Python + Pydantic + statecharts.
+- 规则 DSL 使用 YAML.
+- Redis 保存活跃 session context.
+- PostgreSQL 保存 rule definition 和审计结果.
+- Kafka/Redpanda/NATS 作为事件总线三选一.
+
+原则是先完成稳定闭环, 再决定是否迁移到专用规则引擎.

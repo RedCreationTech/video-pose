@@ -1,0 +1,623 @@
+#+TITLE: Video Pose Action Model Design
+#+SUBTITLE: 多视角人体操作动作语义模型与流程状态模型
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 文档目标
+
+本文定义 Video Pose 系统中"从视觉观测到业务动作"的统一语义模型.
+
+设计目标:
+
+- 将四路摄像头产生的检测结果转换为稳定的动作事件.
+- 将人体姿态, 手部姿态, 工具, 工件, 空间区域和设备状态统一到同一个事件模型.
+- 将短时动作原子组合为业务步骤.
+- 将业务步骤组合为 SOP 流程实例.
+- 明确动作置信度, 时间约束, 空间约束, 顺序约束和异常语义.
+- 为 Rule Engine, Evaluation Service, API 和测试系统提供稳定的数据契约.
+- 支持规则优先的工业判定, 避免把最终合规结论完全交给黑盒模型.
+
+* 2. C4 定位
+
+本文对应 C4 Container 与 Component 两层之间的领域设计.
+
+#+BEGIN_SRC text
+[C03 Pose Fusion Service]
+        |
+        | pose.object.relation observations
+        v
+[C04 Action Recognition Service]
+        |
+        | ActionEvent
+        v
+[C05 Rule Engine]
+        |
+        | StepResult / Violation
+        v
+[C06 Evaluation Service]
+#+END_SRC
+
+C04 内部组件:
+
+#+BEGIN_SRC text
++---------------------------------------------------------+
+| C04 Action Recognition Service                         |
+|                                                         |
+| A01 Observation Normalizer                              |
+|      |                                                  |
+| A02 Feature Assembler                                   |
+|      |                                                  |
+| A03 Temporal Action Recognizer                          |
+|      |                                                  |
+| A04 Multi-view Confidence Fusion                        |
+|      |                                                  |
+| A05 Action Event Normalizer                             |
+|      |                                                  |
+| A06 Compound Action Builder                             |
++---------------------------------------------------------+
+#+END_SRC
+
+* 3. 设计原则
+
+** 3.1 感知事实与业务结论分离
+
+AI 模型输出"看到什么", 规则系统输出"是否规范".
+
+例如:
+
+#+BEGIN_SRC text
+视觉事实:
+right_hand near torque_wrench
+tool torque_wrench held_by operator_001
+right_wrist moves from zone_A to zone_B
+
+动作事件:
+PICK(tool=torque_wrench)
+
+业务结论:
+STEP_30_TOOL_PICK completed
+
+规范结论:
+compliant
+#+END_SRC
+
+** 3.2 时间序列优先
+
+动作不是单帧分类. 系统所有动作均基于时间窗口判断.
+
+** 3.3 多视角证据融合
+
+单视角被遮挡时, 不立即判定动作失败. 需要聚合四路摄像头证据.
+
+** 3.4 明确未知状态
+
+无法确认时返回 UNKNOWN, 而不是强制分类为正确或错误.
+
+** 3.5 所有结论可追溯
+
+每个 ActionEvent 必须可以追溯到:
+
+- session_id.
+- observation_id.
+- camera_id.
+- frame timestamp.
+- model version.
+- confidence.
+- evidence clip.
+
+* 4. 核心领域对象
+
+** 4.1 OperationSession
+
+一次完整作业或考核会话.
+
+| 字段 | 类型 | 说明 |
+| session_id | UUID | 全局唯一标识 |
+| operation_definition_id | UUID | SOP 定义 |
+| operation_version | string | SOP 版本 |
+| operator_id | string | 操作人员 |
+| workstation_id | string | 工位 |
+| started_at | timestamp | 开始时间 |
+| ended_at | timestamp | 结束时间 |
+| status | enum | CREATED/RUNNING/COMPLETED/ABORTED |
+| calibration_profile_id | UUID | 本次使用的标定配置 |
+
+** 4.2 Observation
+
+感知层输出的最小事实.
+
+#+BEGIN_SRC json
+{
+  "observation_id": "obs-001",
+  "session_id": "session-001",
+  "camera_id": "front",
+  "timestamp_ns": 1790000000123456789,
+  "entity_type": "hand",
+  "entity_id": "operator-001:right_hand",
+  "attributes": {
+    "position_2d": [812.2, 433.1],
+    "position_3d_mm": [102.4, 522.8, 1180.2],
+    "confidence": 0.96
+  },
+  "model": {
+    "name": "rtmpose",
+    "version": "v1"
+  }
+}
+#+END_SRC
+
+Observation 分类:
+
+- PERSON.
+- BODY_KEYPOINT.
+- HAND_KEYPOINT.
+- OBJECT.
+- ZONE_RELATION.
+- HUMAN_OBJECT_RELATION.
+- DEVICE_SIGNAL.
+- TRACKING_STATE.
+
+** 4.3 ActionAtom
+
+ActionAtom 是可复用的动作原子.
+
+第一阶段建议支持以下集合:
+
+| 类别 | ActionAtom | 示例 |
+| 手部 | REACH | 伸手到目标区域 |
+| 手部 | GRASP | 握住对象 |
+| 手部 | RELEASE | 松开对象 |
+| 物体 | PICK | 拿起工具或零件 |
+| 物体 | PLACE | 将对象放到指定区域 |
+| 物体 | MOVE | 搬运对象 |
+| 装配 | INSERT | 插入 |
+| 装配 | REMOVE | 拆出 |
+| 装配 | ROTATE | 旋转 |
+| 工具 | OPERATE_TOOL | 操作工具 |
+| 检查 | INSPECT | 观察或检查 |
+| 安全 | ENTER_ZONE | 进入区域 |
+| 安全 | LEAVE_ZONE | 离开区域 |
+| 流程 | CONFIRM | 明确确认动作 |
+| 流程 | WAIT | 等待稳定或设备完成 |
+
+不要在第一阶段建立数百个动作类别. 优先保证少量动作可稳定组合.
+
+** 4.4 ActionEvent
+
+标准动作事件格式:
+
+#+BEGIN_SRC json
+{
+  "event_id": "act-001",
+  "session_id": "session-001",
+  "action": "PICK",
+  "actor_id": "operator-001",
+  "hand": "RIGHT",
+  "object": {
+    "id": "tool-014",
+    "class": "torque_wrench"
+  },
+  "source_zone": "tool_rack_A",
+  "target_zone": null,
+  "started_at_ms": 12750,
+  "ended_at_ms": 13620,
+  "confidence": 0.94,
+  "view_confidence": {
+    "front": 0.91,
+    "rear": 0.20,
+    "left": 0.95,
+    "right": 0.87
+  },
+  "evidence_refs": [
+    "evidence://session-001/front/12750-13620",
+    "evidence://session-001/left/12750-13620"
+  ],
+  "model_version": "action-model-0.1.0"
+}
+#+END_SRC
+
+* 5. 空间语义模型
+
+** 5.1 World Coordinate
+
+所有空间规则尽可能使用世界坐标, 单位统一为毫米.
+
+#+BEGIN_SRC text
+origin:
+workstation center
+
+X:
+left -> right
+
+Y:
+front -> rear
+
+Z:
+ground -> up
+#+END_SRC
+
+** 5.2 Zone
+
+Zone 用于减少规则对像素坐标的依赖.
+
+典型 Zone:
+
+- operator_work_zone.
+- tool_rack_A.
+- component_bin_A.
+- assembly_zone.
+- forbidden_zone.
+- inspection_zone.
+- safety_button_zone.
+
+Zone 类型:
+
+- BOX_3D.
+- POLYGON_2D.
+- CYLINDER_3D.
+- DYNAMIC_OBJECT_BOUNDARY.
+
+** 5.3 Relation
+
+统一空间关系:
+
+- IN.
+- OUTSIDE.
+- NEAR.
+- TOUCHING.
+- HELD_BY.
+- ABOVE.
+- BELOW.
+- LEFT_OF.
+- RIGHT_OF.
+- APPROACHING.
+- LEAVING.
+
+* 6. 时间模型
+
+所有事件使用统一单调时间轴.
+
+建议同时保存:
+
+- source_timestamp_ns, 摄像头源时间.
+- capture_timestamp_ns, 边缘节点采集时间.
+- normalized_timestamp_ns, 同步后的系统时间.
+- session_offset_ms, 相对会话开始时间.
+
+事件窗口:
+
+#+BEGIN_SRC text
+pre_window_ms  = 500
+action_window  = variable
+post_window_ms = 500
+#+END_SRC
+
+支持以下时间条件:
+
+- duration_min.
+- duration_max.
+- must_start_within.
+- must_finish_within.
+- must_follow_within.
+- overlap_min.
+- debounce.
+- stable_for.
+
+* 7. 多视角融合
+
+** 7.1 输入
+
+每个视角独立产生:
+
+- 人体轨迹.
+- 关键点.
+- 手部关键点.
+- 对象轨迹.
+- 人物与对象关系.
+
+** 7.2 融合策略
+
+MVP 使用可解释的加权融合.
+
+#+BEGIN_SRC text
+fused_confidence =
+    visibility_weight
+  * calibration_quality
+  * model_confidence
+  * temporal_consistency
+#+END_SRC
+
+融合规则:
+
+1. 至少一个高质量视角确认时, 可以建立候选事件.
+2. 两个或更多视角一致时, 提升置信度.
+3. 视角冲突时, 优先使用可见性和标定质量更高的视角.
+4. 所有视角均低置信度时, 输出 UNKNOWN.
+5. 不允许为了满足规则而人工提升置信度.
+
+** 7.3 遮挡状态
+
+| 状态 | 说明 |
+| CLEAR | 关键区域清晰 |
+| PARTIAL | 部分关键点不可见 |
+| OCCLUDED | 主要动作被遮挡 |
+| LOST | 人或对象跟踪丢失 |
+
+* 8. 复合动作
+
+复合动作由 ActionAtom 和条件构成.
+
+示例, "正确拿取扭矩扳手":
+
+#+BEGIN_SRC text
+REACH(tool_rack_A)
+  -> GRASP(torque_wrench)
+  -> object HELD_BY right_hand
+  -> PICK(torque_wrench)
+#+END_SRC
+
+复合动作定义需要包含:
+
+- required atoms.
+- optional atoms.
+- maximum gap.
+- object constraints.
+- hand constraints.
+- zone constraints.
+- minimum confidence.
+- completion policy.
+
+* 9. SOP 步骤模型
+
+#+BEGIN_SRC json
+{
+  "step_id": "S030",
+  "name": "拿取扭矩扳手",
+  "required_action": {
+    "type": "PICK",
+    "object_class": "torque_wrench",
+    "hand": "ANY"
+  },
+  "preconditions": [
+    "S020 == COMPLETED"
+  ],
+  "time": {
+    "max_duration_ms": 10000
+  },
+  "completion": {
+    "min_confidence": 0.85
+  },
+  "on_failure": "VIOLATION"
+}
+#+END_SRC
+
+步骤状态:
+
+#+BEGIN_SRC text
+PENDING
+  |
+  v
+READY
+  |
+  v
+ACTIVE
+ /   \
+v     v
+COMPLETED  VIOLATED
+   \       /
+      v
+    CLOSED
+#+END_SRC
+
+额外状态:
+
+- SKIPPED.
+- UNKNOWN.
+- CANCELLED.
+
+* 10. 流程模型
+
+流程不是固定线性链, 使用有向图表达.
+
+#+BEGIN_SRC text
+START
+  |
+ S010
+  |
+ S020
+ /   \
+S030  S031
+ \   /
+  S040
+   |
+  END
+#+END_SRC
+
+支持:
+
+- 必选步骤.
+- 可选步骤.
+- 并行步骤.
+- 分支步骤.
+- 重试步骤.
+- 人工确认步骤.
+- 设备信号触发步骤.
+
+* 11. 异常模型
+
+异常分为 7 类.
+
+| 类别 | 说明 |
+| ORDER | 顺序错误 |
+| MISSING | 漏步骤 |
+| WRONG_OBJECT | 使用错误对象 |
+| WRONG_TOOL | 使用错误工具 |
+| SPATIAL | 位置或区域错误 |
+| TEMPORAL | 超时, 过快, 时间间隔错误 |
+| SAFETY | 安全规则违反 |
+
+Violation 标准结构:
+
+#+BEGIN_SRC json
+{
+  "violation_id": "vio-001",
+  "session_id": "session-001",
+  "step_id": "S030",
+  "type": "WRONG_TOOL",
+  "severity": "MAJOR",
+  "detected_at_ms": 13620,
+  "confidence": 0.96,
+  "expected": "torque_wrench",
+  "actual": "open_end_wrench",
+  "evidence_event_ids": ["act-001"],
+  "rule_id": "R-S030-TOOL-01",
+  "rule_version": "3"
+}
+#+END_SRC
+
+严重等级:
+
+- INFO.
+- MINOR.
+- MAJOR.
+- CRITICAL.
+
+* 12. 不确定性处理
+
+不确定性是工业系统必须保留的一等状态.
+
+判定区间建议:
+
+| confidence | 处理 |
+| >= 0.90 | 自动接受 |
+| 0.75 - 0.90 | 接受, 标记低置信度 |
+| 0.55 - 0.75 | 进入二次融合或延迟判定 |
+| < 0.55 | UNKNOWN |
+
+阈值必须按动作类别配置, 不使用全局固定阈值.
+
+对 CRITICAL 安全规则建议使用更保守策略:
+
+- 视觉证据不足时不自动宣告合规.
+- 可配置为 NEEDS_REVIEW.
+- 必要时结合设备 IO 或安全传感器.
+
+* 13. 评分模型
+
+评分不直接由 AI confidence 产生.
+
+#+BEGIN_SRC text
+base_score = 100
+
+final_score =
+  base_score
+  - step_penalties
+  - violation_penalties
+  - safety_penalties
+  - timeout_penalties
+#+END_SRC
+
+示例:
+
+| 事件 | 扣分 |
+| MINOR | 1 - 3 |
+| MAJOR | 5 - 15 |
+| CRITICAL | 可直接判定不合格 |
+| 漏关键步骤 | 10 - 30 |
+| 超时 | 规则配置 |
+
+输出必须同时保留:
+
+- score.
+- pass/fail.
+- score_breakdown.
+- evidence.
+- rule versions.
+
+* 14. 动作模型版本管理
+
+模型版本需要区分:
+
+- perception_model_version.
+- pose_model_version.
+- action_model_version.
+- operation_definition_version.
+- rule_set_version.
+- calibration_profile_version.
+
+一次会话开始后, 默认冻结所有版本, 避免中途升级造成同一会话前后判定口径变化.
+
+* 15. MVP 示例流程
+
+示例任务: "紧固组件 A".
+
+#+BEGIN_SRC text
+S010 确认工件在位
+  |
+S020 拿取扭矩扳手
+  |
+S030 将工具移动到紧固点
+  |
+S040 执行旋转紧固
+  |
+S050 放回工具
+  |
+S060 检查工件
+#+END_SRC
+
+关键规则:
+
+- S020 必须拿取 torque_wrench.
+- S030 之前必须完成 S020.
+- S040 必须在 assembly_zone 内.
+- S040 持续时间必须在配置范围内.
+- S050 必须将工具放回 tool_rack_A.
+- S060 不允许被跳过.
+
+* 16. 事件主题
+
+建议内部事件总线主题:
+
+#+BEGIN_SRC text
+vp.observation.person.v1
+vp.observation.pose.v1
+vp.observation.object.v1
+vp.observation.relation.v1
+vp.action.event.v1
+vp.action.compound.v1
+vp.workflow.step.v1
+vp.rule.violation.v1
+vp.evaluation.result.v1
+#+END_SRC
+
+* 17. 验收标准
+
+动作模型层在 MVP 阶段至少满足:
+
+- 支持 10 种以上 ActionAtom.
+- 支持单手/双手动作.
+- 支持至少 20 类工具或零件.
+- 支持四视角 evidence.
+- 支持线性和分支 SOP.
+- 支持 UNKNOWN.
+- 支持步骤级证据回放.
+- 同一输入事件重放时, 规则结果确定性一致.
+- 所有动作和违规均能追溯到模型, 规则和视频证据版本.
+
+* 18. 后续演进
+
+V2:
+
+- 图神经网络建模 Human-Object Interaction.
+- 3D 手部姿态.
+- 更强的 Temporal Transformer.
+- 自监督视频预训练.
+- 少样本动作扩展.
+- 视觉与设备时序联合建模.
+
+V3:
+
+- 基于自然语言 SOP 自动生成规则草稿.
+- 多模态 Video Agent 作为离线复核器.
+- 从历史异常自动发现新规则候选.

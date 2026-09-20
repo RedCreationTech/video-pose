@@ -1,0 +1,490 @@
+#+TITLE: Video Pose API and Event Contract Design
+#+SUBTITLE: REST, WebSocket, gRPC 与内部事件协议
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 文档目标
+
+本文定义 Video Pose 平台对外 API 和内部服务通信契约.
+
+原则:
+
+- 外部管理接口使用 REST/JSON.
+- 实时 UI 使用 WebSocket 或 Server-Sent Events.
+- 高吞吐内部推理链路使用 gRPC 或事件总线.
+- 所有协议显式版本化.
+- 所有写接口支持 trace_id.
+- 关键写操作支持 idempotency key.
+
+* 2. C4 Container 定位
+
+#+BEGIN_SRC text
+Web Console
+    |
+    | HTTPS / WebSocket
+    v
+C07 API & Control Service
+    |
+    +----> C01 Video Gateway
+    +----> C05 Rule Engine
+    +----> C06 Evaluation Service
+    +----> C09 Data Storage
+    +----> C10 Model/Config Service
+
+AI services communicate through:
+gRPC + Event Bus
+#+END_SRC
+
+* 3. API 版本
+
+外部 API:
+
+#+BEGIN_SRC text
+/api/v1/...
+#+END_SRC
+
+内部接口:
+
+#+BEGIN_SRC text
+/internal/v1/...
+#+END_SRC
+
+事件 schema:
+
+#+BEGIN_SRC text
+event_type + schema_version
+#+END_SRC
+
+* 4. 通用请求头
+
+#+BEGIN_SRC text
+Authorization: Bearer <token>
+X-Request-Id: <uuid>
+Idempotency-Key: <uuid>
+X-Workstation-Id: <id>
+#+END_SRC
+
+* 5. 通用响应
+
+成功:
+
+#+BEGIN_SRC json
+{
+  "data": {},
+  "meta": {
+    "request_id": "req-001",
+    "timestamp": "2026-09-20T12:00:00Z"
+  }
+}
+#+END_SRC
+
+错误:
+
+#+BEGIN_SRC json
+{
+  "error": {
+    "code": "VP_RULE_4001",
+    "message": "Rule validation failed",
+    "details": [
+      {
+        "path": "when.event.type",
+        "reason": "unsupported action type"
+      }
+    ]
+  },
+  "meta": {
+    "request_id": "req-001"
+  }
+}
+#+END_SRC
+
+* 6. Workstation API
+
+** 6.1 查询工位
+
+#+BEGIN_SRC text
+GET /api/v1/workstations
+GET /api/v1/workstations/{id}
+#+END_SRC
+
+** 6.2 摄像头健康状态
+
+#+BEGIN_SRC text
+GET /api/v1/workstations/{id}/cameras
+GET /api/v1/workstations/{id}/camera-health
+#+END_SRC
+
+响应字段:
+
+- online.
+- fps.
+- bitrate.
+- frame_age_ms.
+- clock_offset_ms.
+- dropped_frames.
+- inference_enabled.
+
+* 7. Calibration API
+
+#+BEGIN_SRC text
+POST /api/v1/workstations/{id}/calibrations
+POST /api/v1/workstations/{id}/calibrations/{calibration_id}/validate
+POST /api/v1/workstations/{id}/calibrations/{calibration_id}/activate
+GET  /api/v1/workstations/{id}/calibrations
+#+END_SRC
+
+activate 前必须满足 reprojection_error 阈值.
+
+* 8. Operation Definition API
+
+#+BEGIN_SRC text
+POST /api/v1/operations
+GET  /api/v1/operations
+GET  /api/v1/operations/{code}/versions
+GET  /api/v1/operations/{code}/versions/{version}
+POST /api/v1/operations/{code}/versions/{version}/validate
+POST /api/v1/operations/{code}/versions/{version}/publish
+#+END_SRC
+
+* 9. Rule API
+
+#+BEGIN_SRC text
+POST /api/v1/rule-sets
+GET  /api/v1/rule-sets/{id}
+POST /api/v1/rule-sets/{id}/validate
+POST /api/v1/rule-sets/{id}/publish
+POST /api/v1/rule-sets/{id}/simulate
+#+END_SRC
+
+simulate 输入可以是一组 ActionEvent, 输出 rule trace.
+
+* 10. Session API
+
+** 10.1 创建
+
+#+BEGIN_SRC text
+POST /api/v1/sessions
+#+END_SRC
+
+请求:
+
+#+BEGIN_SRC json
+{
+  "workstation_id": "ws-001",
+  "operator_id": "op-001",
+  "operation": {
+    "code": "assembly_A",
+    "version": 3
+  }
+}
+#+END_SRC
+
+响应:
+
+#+BEGIN_SRC json
+{
+  "data": {
+    "session_id": "018f...",
+    "status": "CREATED",
+    "resolved_versions": {
+      "rule_set": 4,
+      "action_model": "0.3.1",
+      "calibration_profile": 7
+    }
+  }
+}
+#+END_SRC
+
+** 10.2 开始
+
+#+BEGIN_SRC text
+POST /api/v1/sessions/{id}/start
+#+END_SRC
+
+start 前置检查:
+
+- 四路摄像头达到最低在线要求.
+- 标定配置有效.
+- AI 模型 ready.
+- Rule set active.
+- storage 可用.
+
+** 10.3 结束
+
+#+BEGIN_SRC text
+POST /api/v1/sessions/{id}/stop
+POST /api/v1/sessions/{id}/abort
+#+END_SRC
+
+** 10.4 查询
+
+#+BEGIN_SRC text
+GET /api/v1/sessions/{id}
+GET /api/v1/sessions/{id}/timeline
+GET /api/v1/sessions/{id}/steps
+GET /api/v1/sessions/{id}/violations
+GET /api/v1/sessions/{id}/evaluation
+GET /api/v1/sessions/{id}/evidence
+#+END_SRC
+
+* 11. 实时 WebSocket
+
+连接:
+
+#+BEGIN_SRC text
+GET /api/v1/realtime?session_id={id}
+Upgrade: websocket
+#+END_SRC
+
+消息类型:
+
+#+BEGIN_SRC text
+camera.health
+person.tracking
+action.detected
+step.state_changed
+violation.detected
+session.score_changed
+session.state_changed
+system.warning
+#+END_SRC
+
+示例:
+
+#+BEGIN_SRC json
+{
+  "type": "step.state_changed",
+  "schema_version": 1,
+  "session_id": "session-001",
+  "seq": 1021,
+  "timestamp": "2026-09-20T12:00:00.120Z",
+  "payload": {
+    "step_code": "S030",
+    "from": "ACTIVE",
+    "to": "COMPLETED",
+    "confidence": 0.94
+  }
+}
+#+END_SRC
+
+客户端使用 seq 检测消息缺口.
+
+* 12. Evidence API
+
+#+BEGIN_SRC text
+GET /api/v1/evidence/{id}
+POST /api/v1/evidence/{id}/signed-url
+#+END_SRC
+
+默认不直接把对象存储永久 URL 暴露给浏览器.
+
+证据播放支持:
+
+- 单视角.
+- 四视角同步.
+- 带 pose overlay.
+- 违规点前后 N 秒.
+
+* 13. Review API
+
+人工复核:
+
+#+BEGIN_SRC text
+GET  /api/v1/reviews?status=PENDING
+GET  /api/v1/reviews/{id}
+POST /api/v1/reviews/{id}/decision
+#+END_SRC
+
+decision:
+
+#+BEGIN_SRC json
+{
+  "decision": "CONFIRMED_VIOLATION",
+  "reason_code": "WRONG_TOOL",
+  "comment": "人工复核确认",
+  "expected_revision": 2
+}
+#+END_SRC
+
+必须保存 reviewer, timestamp 和原自动判定.
+
+* 14. Internal gRPC
+
+建议服务:
+
+#+BEGIN_SRC text
+VideoFrameService
+PerceptionService
+PoseFusionService
+ActionRecognitionService
+RuleEngineService
+EvidenceService
+#+END_SRC
+
+Frame 不建议通过通用 JSON 传输.
+
+在同一边缘节点可使用:
+
+- shared memory.
+- GStreamer pipeline.
+- CUDA zero-copy.
+- gRPC 只传元数据和控制消息.
+
+* 15. Event Bus Contract
+
+统一 envelope:
+
+#+BEGIN_SRC json
+{
+  "event_id": "evt-001",
+  "event_type": "vp.action.event.v1",
+  "schema_version": 1,
+  "session_id": "session-001",
+  "sequence": 1001,
+  "occurred_at_ns": 1790000000000000000,
+  "producer": "action-engine",
+  "trace_id": "trace-001",
+  "payload": {}
+}
+#+END_SRC
+
+保证:
+
+- 同一 session 尽量按 key 分区.
+- consumer 幂等.
+- at-least-once 可接受.
+- 业务层不依赖 exactly-once 幻觉.
+
+* 16. 模型管理 API
+
+#+BEGIN_SRC text
+GET  /api/v1/models
+GET  /api/v1/models/{name}/versions
+POST /api/v1/models/{name}/versions/{version}/activate
+GET  /api/v1/models/runtime-status
+#+END_SRC
+
+activate 支持:
+
+- workstation scope.
+- site scope.
+- staged rollout.
+- rollback.
+
+* 17. 健康检查
+
+#+BEGIN_SRC text
+GET /health/live
+GET /health/ready
+GET /metrics
+#+END_SRC
+
+ready 不只表示进程存活, 还应检测必要依赖.
+
+AI service ready 需要:
+
+- model loaded.
+- GPU available.
+- warmup passed.
+
+* 18. 错误码
+
+前缀:
+
+#+BEGIN_SRC text
+VP_AUTH_xxxx
+VP_CAMERA_xxxx
+VP_CALIB_xxxx
+VP_SESSION_xxxx
+VP_MODEL_xxxx
+VP_RULE_xxxx
+VP_STORAGE_xxxx
+VP_EVIDENCE_xxxx
+#+END_SRC
+
+示例:
+
+| code | 含义 |
+| VP_CAMERA_1001 | 摄像头离线 |
+| VP_CALIB_2001 | 标定配置无效 |
+| VP_SESSION_3001 | 会话状态不允许此操作 |
+| VP_MODEL_4001 | 模型未就绪 |
+| VP_RULE_5001 | 规则校验失败 |
+| VP_STORAGE_6001 | 证据存储不可用 |
+
+* 19. 权限
+
+角色:
+
+- ADMIN.
+- ENGINEER.
+- SUPERVISOR.
+- REVIEWER.
+- OPERATOR.
+- AUDITOR.
+
+典型权限:
+
+| 操作 | ADMIN | ENGINEER | SUPERVISOR | REVIEWER | OPERATOR |
+| 修改规则 | Y | Y | N | N | N |
+| 发布规则 | Y | Y | N | N | N |
+| 查看全部会话 | Y | Y | Y | Y | N |
+| 人工复核 | Y | N | Y | Y | N |
+| 开始本人会话 | Y | Y | Y | N | Y |
+
+* 20. 审计
+
+必须审计:
+
+- 规则创建/修改/发布.
+- SOP 发布.
+- 模型激活/回滚.
+- 标定配置激活.
+- 人工复核.
+- 视频证据访问.
+- 用户权限修改.
+
+* 21. API 测试
+
+覆盖:
+
+- contract test.
+- schema compatibility.
+- idempotency.
+- authorization.
+- concurrent session start.
+- invalid state transition.
+- large timeline pagination.
+- WebSocket reconnect.
+- event sequence gap.
+- signed URL expiration.
+- replay consistency.
+
+* 22. 性能目标
+
+MVP:
+
+| API | P95 |
+| GET session | < 150 ms |
+| GET violations | < 300 ms |
+| start session | < 1 s, 不含模型冷启动 |
+| WebSocket event delivery | < 200 ms |
+| rule simulate 100 events | < 500 ms |
+
+* 23. OpenAPI 交付要求
+
+代码阶段必须生成:
+
+#+BEGIN_SRC text
+openapi/video-pose-api-v1.yaml
+proto/*.proto
+schemas/events/*.json
+#+END_SRC
+
+CI 中验证:
+
+- OpenAPI syntax.
+- backward compatibility.
+- example validation.
+- generated client smoke test.

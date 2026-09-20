@@ -1,0 +1,539 @@
+#+TITLE: Video Pose Data and Database Design
+#+SUBTITLE: 数据分层, PostgreSQL 模型, 时序数据, 视频证据与生命周期
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 设计目标
+
+Video Pose 属于高吞吐视频和时序事件系统. 不能把所有视频帧, pose 点和业务记录直接塞进单一关系数据库.
+
+数据层采用分层存储:
+
+#+BEGIN_SRC text
+Metadata / Transaction
+        |
+   PostgreSQL
+        |
+        +--------------------+
+        |                    |
+Event / Analytics        Video / Evidence
+        |                    |
+ ClickHouse               S3/MinIO
+        |
+        +--------------------+
+             Cache
+               |
+             Redis
+#+END_SRC
+
+MVP 可以先使用 PostgreSQL + MinIO + Redis. ClickHouse 在事件量明显增加后引入.
+
+* 2. C4 Container 定位
+
+#+BEGIN_SRC text
+[C01 Video Gateway] ---------> Object Storage
+[C02 Perception] ------------> Event Storage
+[C04 Action Engine] ---------> Event Storage
+[C05 Rule Engine] -----------> PostgreSQL
+[C06 Evaluation Service] ----> PostgreSQL
+[C07 API Service] -----------> PostgreSQL/Redis
+[C08 Web Console] -----------> C07
+#+END_SRC
+
+* 3. 数据分类
+
+| 层级 | 数据 | 推荐存储 |
+| L0 | 原始视频 | MinIO/S3 |
+| L1 | 编码后证据视频 | MinIO/S3 |
+| L2 | 原始关键点/检测结果 | Parquet/对象存储或 ClickHouse |
+| L3 | ActionEvent | PostgreSQL/ClickHouse |
+| L4 | Step/Violation/Score | PostgreSQL |
+| L5 | 配置/规则/模型元数据 | PostgreSQL |
+| Cache | 活跃会话上下文 | Redis |
+
+* 4. 主键与时间
+
+主键建议 UUIDv7, 便于按时间有序.
+
+所有时间字段:
+
+- UTC.
+- PostgreSQL 使用 timestamptz.
+- 视频侧同时保存 normalized_timestamp_ns.
+- 业务侧使用 timestamp + session_offset_ms.
+
+* 5. 核心实体关系
+
+#+BEGIN_SRC text
+operator
+   |
+   v
+operation_session ---> operation_definition ---> operation_step
+       |                       |
+       |                       +--> rule_set ---> rule_definition
+       |
+       +--> action_event
+       |
+       +--> step_execution
+       |
+       +--> violation
+       |
+       +--> evaluation_result
+       |
+       +--> evidence_asset
+#+END_SRC
+
+* 6. PostgreSQL 表设计
+
+** 6.1 operator
+
+#+BEGIN_SRC sql
+CREATE TABLE operator (
+    id                  varchar(64) PRIMARY KEY,
+    display_name        varchar(128),
+    external_ref        varchar(128),
+    status              varchar(32) NOT NULL DEFAULT 'ACTIVE',
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+#+END_SRC
+
+系统应尽量减少保存非必要个人敏感信息.
+
+** 6.2 workstation
+
+#+BEGIN_SRC sql
+CREATE TABLE workstation (
+    id                  varchar(64) PRIMARY KEY,
+    name                varchar(128) NOT NULL,
+    site_id             varchar(64),
+    active_calibration_profile_id uuid,
+    status              varchar(32) NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now()
+);
+#+END_SRC
+
+** 6.3 camera
+
+#+BEGIN_SRC sql
+CREATE TABLE camera (
+    id                  varchar(64) PRIMARY KEY,
+    workstation_id      varchar(64) NOT NULL REFERENCES workstation(id),
+    logical_position    varchar(16) NOT NULL,
+    stream_uri_secret_ref varchar(255),
+    width               integer,
+    height              integer,
+    fps                  numeric(6,2),
+    codec                varchar(32),
+    enabled              boolean NOT NULL DEFAULT true,
+    created_at           timestamptz NOT NULL DEFAULT now()
+);
+#+END_SRC
+
+logical_position:
+
+- FRONT.
+- REAR.
+- LEFT.
+- RIGHT.
+
+** 6.4 calibration_profile
+
+#+BEGIN_SRC sql
+CREATE TABLE calibration_profile (
+    id                  uuid PRIMARY KEY,
+    workstation_id      varchar(64) NOT NULL REFERENCES workstation(id),
+    version             integer NOT NULL,
+    status              varchar(32) NOT NULL,
+    intrinsic_json      jsonb NOT NULL,
+    extrinsic_json      jsonb NOT NULL,
+    reprojection_error  numeric(10,6),
+    valid_from          timestamptz,
+    valid_to            timestamptz,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(workstation_id, version)
+);
+#+END_SRC
+
+** 6.5 operation_definition
+
+#+BEGIN_SRC sql
+CREATE TABLE operation_definition (
+    id                  uuid PRIMARY KEY,
+    code                varchar(64) NOT NULL,
+    name                varchar(255) NOT NULL,
+    version             integer NOT NULL,
+    status              varchar(32) NOT NULL,
+    definition_json     jsonb NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    published_at        timestamptz,
+    UNIQUE(code, version)
+);
+#+END_SRC
+
+** 6.6 operation_step
+
+#+BEGIN_SRC sql
+CREATE TABLE operation_step (
+    id                  uuid PRIMARY KEY,
+    operation_definition_id uuid NOT NULL REFERENCES operation_definition(id),
+    step_code           varchar(64) NOT NULL,
+    name                varchar(255) NOT NULL,
+    sequence_hint       integer,
+    required            boolean NOT NULL DEFAULT true,
+    step_definition_json jsonb NOT NULL,
+    UNIQUE(operation_definition_id, step_code)
+);
+#+END_SRC
+
+** 6.7 rule_set
+
+#+BEGIN_SRC sql
+CREATE TABLE rule_set (
+    id                  uuid PRIMARY KEY,
+    operation_definition_id uuid NOT NULL REFERENCES operation_definition(id),
+    version             integer NOT NULL,
+    status              varchar(32) NOT NULL,
+    content_hash        varchar(128) NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    published_at        timestamptz,
+    UNIQUE(operation_definition_id, version)
+);
+#+END_SRC
+
+** 6.8 rule_definition
+
+#+BEGIN_SRC sql
+CREATE TABLE rule_definition (
+    id                  uuid PRIMARY KEY,
+    rule_set_id         uuid NOT NULL REFERENCES rule_set(id),
+    rule_code           varchar(128) NOT NULL,
+    version             integer NOT NULL,
+    name                varchar(255) NOT NULL,
+    priority            integer NOT NULL DEFAULT 100,
+    severity            varchar(32),
+    enabled             boolean NOT NULL DEFAULT true,
+    definition_json     jsonb NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(rule_set_id, rule_code)
+);
+#+END_SRC
+
+** 6.9 operation_session
+
+#+BEGIN_SRC sql
+CREATE TABLE operation_session (
+    id                  uuid PRIMARY KEY,
+    workstation_id      varchar(64) NOT NULL REFERENCES workstation(id),
+    operator_id         varchar(64) REFERENCES operator(id),
+    operation_definition_id uuid NOT NULL REFERENCES operation_definition(id),
+    rule_set_id         uuid NOT NULL REFERENCES rule_set(id),
+    calibration_profile_id uuid NOT NULL REFERENCES calibration_profile(id),
+    action_model_version varchar(64) NOT NULL,
+    status              varchar(32) NOT NULL,
+    started_at          timestamptz,
+    ended_at            timestamptz,
+    result              varchar(32),
+    final_score         numeric(6,2),
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+#+END_SRC
+
+索引:
+
+#+BEGIN_SRC sql
+CREATE INDEX idx_session_workstation_time
+ON operation_session(workstation_id, started_at DESC);
+
+CREATE INDEX idx_session_operator_time
+ON operation_session(operator_id, started_at DESC);
+#+END_SRC
+
+** 6.10 action_event
+
+#+BEGIN_SRC sql
+CREATE TABLE action_event (
+    id                  uuid PRIMARY KEY,
+    session_id          uuid NOT NULL REFERENCES operation_session(id),
+    event_seq           bigint NOT NULL,
+    action_type         varchar(64) NOT NULL,
+    actor_id            varchar(64),
+    object_id           varchar(128),
+    object_class        varchar(128),
+    hand                varchar(16),
+    source_zone         varchar(128),
+    target_zone         varchar(128),
+    started_offset_ms   bigint NOT NULL,
+    ended_offset_ms     bigint,
+    confidence          numeric(6,5) NOT NULL,
+    payload_json        jsonb NOT NULL,
+    model_version       varchar(64) NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(session_id, event_seq)
+);
+#+END_SRC
+
+** 6.11 step_execution
+
+#+BEGIN_SRC sql
+CREATE TABLE step_execution (
+    id                  uuid PRIMARY KEY,
+    session_id          uuid NOT NULL REFERENCES operation_session(id),
+    step_id             uuid NOT NULL REFERENCES operation_step(id),
+    state               varchar(32) NOT NULL,
+    started_offset_ms   bigint,
+    ended_offset_ms     bigint,
+    confidence          numeric(6,5),
+    evidence_json       jsonb,
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(session_id, step_id)
+);
+#+END_SRC
+
+** 6.12 violation
+
+#+BEGIN_SRC sql
+CREATE TABLE violation (
+    id                  uuid PRIMARY KEY,
+    session_id          uuid NOT NULL REFERENCES operation_session(id),
+    step_execution_id   uuid REFERENCES step_execution(id),
+    rule_definition_id  uuid REFERENCES rule_definition(id),
+    violation_type      varchar(64) NOT NULL,
+    severity            varchar(32) NOT NULL,
+    confidence          numeric(6,5),
+    detected_offset_ms  bigint NOT NULL,
+    expected_json       jsonb,
+    actual_json         jsonb,
+    explanation         text,
+    review_status       varchar(32) NOT NULL DEFAULT 'UNREVIEWED',
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+#+END_SRC
+
+** 6.13 evidence_asset
+
+#+BEGIN_SRC sql
+CREATE TABLE evidence_asset (
+    id                  uuid PRIMARY KEY,
+    session_id          uuid NOT NULL REFERENCES operation_session(id),
+    violation_id        uuid REFERENCES violation(id),
+    camera_id           varchar(64),
+    asset_type          varchar(32) NOT NULL,
+    object_uri          text NOT NULL,
+    started_offset_ms   bigint,
+    ended_offset_ms     bigint,
+    sha256              varchar(64),
+    size_bytes          bigint,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+#+END_SRC
+
+asset_type:
+
+- VIDEO_CLIP.
+- SNAPSHOT.
+- POSE_OVERLAY.
+- MULTIVIEW_CLIP.
+
+** 6.14 evaluation_result
+
+#+BEGIN_SRC sql
+CREATE TABLE evaluation_result (
+    id                  uuid PRIMARY KEY,
+    session_id          uuid NOT NULL REFERENCES operation_session(id),
+    result              varchar(32) NOT NULL,
+    score               numeric(6,2),
+    score_breakdown_json jsonb NOT NULL,
+    summary_json        jsonb,
+    generated_at        timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(session_id)
+);
+#+END_SRC
+
+** 6.15 rule_evaluation_trace
+
+#+BEGIN_SRC sql
+CREATE TABLE rule_evaluation_trace (
+    id                  uuid PRIMARY KEY,
+    session_id          uuid NOT NULL REFERENCES operation_session(id),
+    event_seq           bigint,
+    rule_code           varchar(128) NOT NULL,
+    rule_version        integer NOT NULL,
+    decision            varchar(32) NOT NULL,
+    latency_ms          numeric(10,3),
+    trace_json          jsonb NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+#+END_SRC
+
+生产环境可按月份分区或转移到 ClickHouse.
+
+* 7. 原始 Pose 数据
+
+四路 25 FPS, 17 到 133 个关键点会产生大量时序数据.
+
+原则:
+
+- 实时链路使用内存/消息总线.
+- PostgreSQL 不保存每一帧完整 pose.
+- 调试和训练需要时以 Parquet 分片保存到对象存储.
+- 每个分片记录 schema_version, model_version 和时间范围.
+
+建议路径:
+
+#+BEGIN_SRC text
+pose/
+  site={site}/
+  date={yyyy-mm-dd}/
+  session={session_id}/
+  camera={camera_id}/
+  part-0001.parquet
+#+END_SRC
+
+* 8. 视频存储
+
+原始视频路径:
+
+#+BEGIN_SRC text
+raw-video/
+  site/
+  workstation/
+  yyyy/mm/dd/
+  session_id/
+  front/
+  rear/
+  left/
+  right/
+#+END_SRC
+
+证据视频:
+
+#+BEGIN_SRC text
+evidence/
+  yyyy/mm/dd/
+  session_id/
+  violation_id/
+  multiview.mp4
+#+END_SRC
+
+视频文件必须保存:
+
+- codec.
+- fps.
+- width/height.
+- start/end timestamp.
+- sha256.
+- camera_id.
+- session_id.
+
+* 9. 数据生命周期
+
+建议按场景配置.
+
+示例策略:
+
+| 数据 | 默认保留 |
+| 原始完整视频 | 7 - 30 天 |
+| 异常证据视频 | 180 - 365 天 |
+| ActionEvent | 1 - 3 年 |
+| Violation/Evaluation | 按质量体系要求 |
+| 原始 Pose | 7 - 30 天或仅抽样 |
+| 配置/规则版本 | 长期保留 |
+
+删除流程必须保留审计日志.
+
+* 10. 数据安全
+
+- 摄像头 RTSP 密码不明文入库.
+- 使用 Secret Manager 或边缘节点密钥存储.
+- 对象存储使用私有 bucket.
+- 下载证据使用短时签名 URL.
+- API 按角色控制访问.
+- 视频访问记录审计.
+- 人员标识支持匿名化或伪名化.
+- 训练集导出需要单独权限.
+
+* 11. Redis 设计
+
+建议 key:
+
+#+BEGIN_SRC text
+vp:session:{id}:context
+vp:session:{id}:state
+vp:session:{id}:event-offset
+vp:camera:{id}:health
+vp:model:{name}:status
+#+END_SRC
+
+活跃会话 TTL 不短于会话最大允许时长 + 故障恢复窗口.
+
+* 12. 幂等性
+
+ActionEvent 使用:
+
+#+BEGIN_SRC text
+(session_id, event_seq)
+#+END_SRC
+
+作为唯一约束.
+
+Violation 可使用:
+
+#+BEGIN_SRC text
+(session_id, rule_code, step_id, evidence_signature)
+#+END_SRC
+
+构造 idempotency key, 防止事件重放重复扣分.
+
+* 13. 数据迁移
+
+使用 Alembic/Flyway/Liquibase 之一.
+
+规则:
+
+- schema migration 必须进入 Git.
+- 不允许生产环境手工 ALTER 后不回写 migration.
+- destructive migration 必须分两阶段.
+- jsonb schema 同样需要 application schema_version.
+
+* 14. 查询场景
+
+主要查询:
+
+- 查看某次操作全过程.
+- 按操作人查看历史评分.
+- 按工位查看异常趋势.
+- 按规则统计违规次数.
+- 按步骤统计耗时.
+- 查看模型版本变化前后准确率.
+- 查看某个 violation 的多视角证据.
+
+针对这些查询建立组合索引和物化视图.
+
+* 15. 容量估算方法
+
+视频容量估算:
+
+#+BEGIN_SRC text
+capacity_per_day =
+  camera_count
+  * bitrate_mbps
+  * 86400
+  / 8
+#+END_SRC
+
+例如 4 路摄像头, 每路 4 Mbps, 24 小时连续录像约 172.8 GB/天.
+
+实际生产建议按 Session 录像或使用环形缓存 + 事件证据落盘, 避免无意义长期全量保存.
+
+* 16. MVP 数据库验收
+
+- migration 可从空库一次执行完成.
+- 核心实体均具备外键或明确软关联策略.
+- 事件重放不产生重复 ActionEvent 和 Violation.
+- session 可以完整追溯规则版本和模型版本.
+- 证据 URI 可定位到前后左右四路视频.
+- 数据删除策略可配置.
+- 100 万 ActionEvent 查询性能满足 P95 < 500 ms 的常用索引查询.

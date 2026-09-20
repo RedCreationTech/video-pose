@@ -1,0 +1,540 @@
+#+TITLE: Video Pose Deployment Design
+#+SUBTITLE: C4 Deployment, Edge GPU, Camera Pipeline, Network and Operations
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 文档目标
+
+本文定义 Video Pose 系统的部署拓扑, 边缘计算节点, 四路视频接入, GPU 推理资源, 平台服务和运维策略.
+
+设计原则:
+
+- 实时推理尽量在工位边缘侧完成.
+- 视频主链路不依赖公网.
+- 管理和分析能力可以部署在中心服务器.
+- 边缘节点失去中心连接后仍可继续本地检测.
+- 原始视频, AI 事件和业务结果采用不同的数据通道.
+- 关键版本, 模型和规则可灰度升级和回滚.
+
+* 2. C4 Deployment Diagram
+
+#+BEGIN_SRC text
++-------------------------------------------------------------------+
+| Workstation / 工位                                                 |
+|                                                                   |
+| Front Camera ----+                                                |
+| Rear Camera -----+----> Edge GPU Node                             |
+| Left Camera -----+       +--------------------------------------+  |
+| Right Camera ----+       | C01 Video Gateway                    |  |
+|                          | C02 Perception Service               |  |
+| Optional PLC ----------->| C03 Pose Fusion Service              |  |
+|                          | C04 Action Recognition Service       |  |
+|                          | C05 Rule Engine                      |  |
+|                          | C06 Evaluation Service               |  |
+|                          | Local Redis / Buffer / Recorder      |  |
+|                          +------------------+-------------------+  |
++---------------------------------------------|----------------------+
+                                              |
+                                      TLS / Event / API
+                                              |
+                                              v
++-------------------------------------------------------------------+
+| Site / Central Platform                                           |
+|                                                                   |
+|  API & Control Service       Web Console                           |
+|  PostgreSQL                  MinIO/S3                              |
+|  Event Bus                   Model Registry                       |
+|  Monitoring                  Training/Offline Analytics           |
++-------------------------------------------------------------------+
+#+END_SRC
+
+* 3. 部署模式
+
+** 3.1 MVP 单机模式
+
+一台工业 PC 同时承担:
+
+- 4 路 RTSP.
+- 视频解码.
+- 人体/工具检测.
+- Pose.
+- 动作识别.
+- Rule Engine.
+- Web API.
+- PostgreSQL.
+- MinIO.
+
+适合实验室和单工位验证.
+
+** 3.2 生产推荐模式
+
+边缘节点:
+
+- 实时视频.
+- 推理.
+- 本地规则.
+- 本地短时缓存.
+
+中心平台:
+
+- 配置.
+- 报表.
+- 模型.
+- 长期存储.
+- 多工位管理.
+
+** 3.3 大规模模式
+
+多个 Edge Node 连接站点级平台.
+
+#+BEGIN_SRC text
+Edge-01 ----+
+Edge-02 ----+--> Site Platform --> Enterprise Platform
+Edge-03 ----+
+#+END_SRC
+
+* 4. 摄像头要求
+
+MVP 推荐参数:
+
+| 参数 | 建议 |
+| 分辨率 | 1920x1080 |
+| 帧率 | 25 或 30 FPS |
+| 编码 | H.264/H.265 |
+| 接入 | RTSP, ONVIF |
+| 供电 | PoE |
+| 快门 | 运动明显时优先 Global Shutter |
+| 低照度 | 根据工位实际照明验证 |
+| 时间同步 | NTP, 条件允许时 PTP |
+
+4K 不作为 MVP 强制要求. 对手部和小工具识别不足时, 优先增加局部相机或提升局部视角像素密度, 而不是简单把全部摄像头升级到 4K.
+
+* 5. 摄像头布局
+
+#+BEGIN_SRC text
+                 Rear
+                  |
+                  |
+Left -------- Workstation -------- Right
+                  |
+                  |
+                 Front
+#+END_SRC
+
+安装原则:
+
+- 让左右相机优先覆盖双手和工作台.
+- 前后相机补充身体遮挡.
+- 避免四个视角高度完全相同.
+- 尽量减少强逆光.
+- 固定安装, 防止标定后角度漂移.
+- 每个工位保存安装照片和测量尺寸.
+
+* 6. 时间同步
+
+动作融合要求不同视频帧在同一时间轴上.
+
+时间同步层级:
+
+#+BEGIN_SRC text
+Level 1:
+NTP, 目标 < 20 ms
+
+Level 2:
+PTP, 目标 < 5 ms
+
+Level 3:
+Hardware trigger, 对极高精度场景使用
+#+END_SRC
+
+系统持续监测 camera clock offset.
+
+超过阈值时:
+
+- 标记 TIME_SYNC_DEGRADED.
+- 降低多视角融合置信度.
+- 严重时阻止正式考核 session 开始.
+
+* 7. 视频处理管线
+
+#+BEGIN_SRC text
+RTSP
+ |
+Jitter Buffer
+ |
+Hardware Decode
+ |
+Frame Timestamp Normalize
+ |
+Ring Buffer
+ |
++----------------------+-----------------------+
+|                      |                       |
+Person/Object       Pose/Hand              Recorder
+Detection           Estimation             Evidence
+|                      |
++---------- Feature Fusion ------------------+
+                       |
+                 Action Engine
+#+END_SRC
+
+推荐 GStreamer 管理主视频 pipeline.
+
+FFmpeg 适用于:
+
+- 转码.
+- 证据 clip.
+- 文件探测.
+- 离线处理.
+
+* 8. GPU 推理调度
+
+避免每个服务各自复制视频帧和 CUDA 内存.
+
+优先方案:
+
+#+BEGIN_SRC text
+Decoder
+  |
+CUDA/NVMM buffer
+  |
+Inference Scheduler
+  |
++--------+--------+--------+
+Person   Pose     Object   Hand
+#+END_SRC
+
+模型推理可采用:
+
+- PyTorch, 开发阶段.
+- ONNX Runtime, 跨平台.
+- TensorRT, NVIDIA 生产加速.
+- Triton Inference Server, 多模型规模化后引入.
+
+MVP 不强制 Triton.
+
+* 9. 性能预算
+
+四路 1080P@25FPS 总输入为 100 frame/s.
+
+不要求所有模型都对每一帧执行.
+
+示例调度:
+
+#+BEGIN_SRC text
+Tracking:
+25 FPS per camera
+
+Person/Object Detection:
+8-12 FPS per camera
+
+Pose:
+15-25 FPS for active operator
+
+Hand detail:
+ROI triggered, 10-20 FPS
+
+Action temporal model:
+5-10 Hz feature sequence
+#+END_SRC
+
+目标端到端告警延迟:
+
+#+BEGIN_SRC text
+capture
+ + decode
+ + detection
+ + pose
+ + fusion
+ + action
+ + rule
+ + UI delivery
+ < 500 ms P95 for normal real-time rules
+#+END_SRC
+
+200 ms 可作为优化目标, 不建议把它作为所有模型链路第一阶段的刚性指标.
+
+* 10. 边缘硬件
+
+** 10.1 MVP 开发机
+
+建议:
+
+- x86-64.
+- 8 核以上 CPU.
+- 32 GB RAM.
+- NVIDIA RTX 4060 8GB 或更高.
+- 1 TB NVMe.
+- 1 GbE.
+
+** 10.2 工业生产机
+
+根据模型基准测试选型:
+
+- NVIDIA RTX Ada/Ampere 工业 GPU.
+- Jetson AGX Orin, 对体积和功耗敏感场景.
+- 32-64 GB RAM.
+- NVMe RAID 或独立录像盘.
+- 双网口.
+- UPS.
+
+不得仅凭 GPU 型号宣称支持 4 路实时. 必须使用目标模型做 benchmark.
+
+* 11. 网络
+
+建议网络分区:
+
+#+BEGIN_SRC text
+Camera VLAN
+   |
+Edge Node
+   |
+Production LAN
+   |
+Central Platform
+#+END_SRC
+
+Camera VLAN 默认不允许直接访问互联网.
+
+带宽规划包括:
+
+- 摄像头码流.
+- 中心证据上传.
+- 模型分发.
+- 远程运维.
+- Web 实时预览.
+
+* 12. 容器化
+
+MVP Docker Compose:
+
+#+BEGIN_SRC text
+video-gateway
+perception-service
+pose-fusion
+action-engine
+rule-engine
+evaluation-service
+api-service
+web-console
+postgres
+redis
+minio
+otel-collector
+prometheus
+grafana
+#+END_SRC
+
+生产多工位可迁移到 K3s/Kubernetes, 但边缘单工位不为了技术统一强制上 Kubernetes.
+
+* 13. 服务资源隔离
+
+GPU 服务:
+
+- 设置显存上限或固定模型组合.
+- 进程启动时 warmup.
+- OOM 时健康状态置 DEGRADED.
+
+CPU 服务:
+
+- Video Gateway 独立 CPU affinity 可选.
+- Rule Engine 不与高负载转码争抢核心.
+
+磁盘:
+
+- 原始录像和数据库 WAL 不共用低性能磁盘.
+
+* 14. 本地容错
+
+边缘节点与中心断开:
+
+- 继续当前 session.
+- 本地保存 ActionEvent.
+- 本地保存 Violation.
+- evidence 写本地 spool.
+- 中心恢复后补传.
+
+本地存储达到高水位:
+
+#+BEGIN_SRC text
+70% -> warning
+85% -> cleanup non-evidence raw cache
+95% -> block new recording/session according to policy
+#+END_SRC
+
+异常证据优先级高于普通录像.
+
+* 15. 服务启动依赖
+
+session start readiness:
+
+#+BEGIN_SRC text
+camera_ready
+AND calibration_ready
+AND perception_model_ready
+AND action_model_ready
+AND rule_set_ready
+AND local_storage_ready
+#+END_SRC
+
+中心离线是否允许开始新 session, 由站点策略配置.
+
+* 16. 模型发布
+
+流程:
+
+#+BEGIN_SRC text
+UPLOAD
+  |
+VALIDATE
+  |
+BENCHMARK
+  |
+STAGED
+  |
+CANARY EDGE
+  |
+ACTIVE
+#+END_SRC
+
+模型包至少包含:
+
+- model file.
+- input schema.
+- output schema.
+- preprocess config.
+- postprocess config.
+- labels.
+- threshold defaults.
+- checksum.
+- compatibility metadata.
+
+* 17. 规则与模型解耦发布
+
+模型和规则独立版本.
+
+一次 session 启动时解析并冻结:
+
+#+BEGIN_SRC text
+perception_model_version
+pose_model_version
+action_model_version
+operation_version
+rule_set_version
+calibration_version
+#+END_SRC
+
+* 18. 可观测性
+
+Metrics:
+
+- camera_online.
+- input_fps.
+- decode_fps.
+- dropped_frame_total.
+- inference_latency_ms.
+- gpu_utilization.
+- gpu_memory.
+- action_event_rate.
+- rule_latency_ms.
+- evidence_write_latency.
+- disk_usage.
+- session_state.
+
+Logs:
+
+- JSON structured logs.
+- trace_id.
+- session_id.
+- camera_id.
+- model_version.
+
+Tracing:
+
+OpenTelemetry 贯穿:
+
+#+BEGIN_SRC text
+capture metadata
+ -> action event
+ -> rule decision
+ -> API push
+#+END_SRC
+
+* 19. 告警
+
+P1:
+
+- 四路中关键摄像头不可用.
+- GPU 服务崩溃.
+- 磁盘即将满.
+- Rule Engine 无法处理事件.
+- evidence 写入失败.
+
+P2:
+
+- FPS 长期下降.
+- 时间同步偏差超阈值.
+- 模型延迟上升.
+- 中心连接断开.
+
+* 20. 安全
+
+- 设备接入使用独立网络.
+- API 全部 TLS.
+- 中心到边缘使用 mTLS 或设备证书.
+- RTSP 密码存 Secret.
+- 禁止把摄像头管理密码写入 Git.
+- 镜像做漏洞扫描.
+- 容器尽量非 root.
+- 日志不记录 token 和视频鉴权信息.
+
+* 21. Backup
+
+PostgreSQL:
+
+- 每日备份.
+- WAL/PITR, 正式生产建议.
+
+MinIO:
+
+- evidence bucket 设置版本或生命周期策略.
+- 关键证据按业务要求异地复制.
+
+配置:
+
+- SOP.
+- rules.
+- calibration.
+- model metadata.
+
+必须可恢复.
+
+* 22. Disaster Recovery
+
+定义:
+
+- RPO.
+- RTO.
+- 边缘单点故障是否允许人工操作继续.
+- 数据补录流程.
+
+MVP 建议:
+
+#+BEGIN_SRC text
+RPO for metadata <= 5 min
+RTO for central platform <= 2 h
+Edge current session:
+local recovery first
+#+END_SRC
+
+* 23. 部署验收
+
+- 四路 RTSP 连续运行 72 小时无不可恢复断流.
+- 任一路摄像头断开后自动重连.
+- GPU 服务重启后自动 warmup.
+- 中心断网 30 分钟时边缘继续完成 session.
+- 恢复连接后事件补传无重复.
+- 磁盘清理不删除未过保留期的异常证据.
+- 版本切换可回滚.
+- P95 实时判定延迟达到项目目标.
