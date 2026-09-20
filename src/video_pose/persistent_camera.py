@@ -11,7 +11,7 @@ from .live_gateway import ThreadedLiveGateway
 from .live_health import LiveHealthRegistry, LiveHealthSnapshot
 from .live_video import LiveFrameSynchronizer, MemoryFrameStore
 from .runtime_config import LoadedAnalysisConfig
-from .video_manifest import ReplayManifest, load_manifest
+from .video_manifest import CameraPosition, ReplayManifest, load_manifest
 from .video_replay import SynchronizedFrameSet
 
 
