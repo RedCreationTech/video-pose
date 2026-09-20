@@ -1,0 +1,3 @@
+{"event_id":"e1","session_id":"demo-wrong-tool","sequence":1,"action":"PICK","object":{"id":"part-1","class":"component_A"},"source_zone":"component_bin_A","started_at_ms":1000,"ended_at_ms":1300,"confidence":0.98}
+{"event_id":"e2","session_id":"demo-wrong-tool","sequence":2,"action":"PLACE","object":{"id":"part-1","class":"component_A"},"target_zone":"assembly_zone","started_at_ms":1800,"ended_at_ms":2200,"confidence":0.97}
+{"event_id":"e3","session_id":"demo-wrong-tool","sequence":3,"action":"PICK","object":{"id":"tool-9","class":"open_end_wrench"},"source_zone":"tool_rack_A","started_at_ms":2500,"ended_at_ms":2800,"confidence":0.96}

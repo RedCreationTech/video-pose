@@ -1,0 +1,40 @@
+#+TITLE: Video Pose
+#+SUBTITLE: 多视角人员动作规范检测平台
+
+* 当前阶段
+
+当前代码实现第一个可执行闭环:
+
+#+BEGIN_SRC text
+Replay JSONL
+   |
+   v
+ActionEvent Contract
+   |
+   v
+Rule Engine
+   |
+   v
+Step State + Violation
+   |
+   v
+Deterministic Result JSON
+#+END_SRC
+
+真实视频模型将在后续 Sprint 以 Adapter 的方式接入, 保持 ActionEvent 和 Rule Engine 契约不变.
+
+* 快速开始
+
+#+BEGIN_SRC sh
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+pytest
+video-pose-replay \
+  --events fixtures/replay/wrong-tool.jsonl \
+  --rules fixtures/rules/assembly-a.yaml
+#+END_SRC
+
+* 文档
+
+详细 C4 与技术设计见 =docs/=.

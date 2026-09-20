@@ -1,0 +1,69 @@
+operation: assembly_A
+version: 1
+steps:
+  - code: S010
+    name: 拿取工件
+    action: PICK
+    object_class: component_A
+    source_zone: component_bin_A
+    min_confidence: 0.80
+  - code: S020
+    name: 放置工件
+    action: PLACE
+    object_class: component_A
+    target_zone: assembly_zone
+    predecessors: [S010]
+    min_confidence: 0.80
+  - code: S030
+    name: 拿取扭矩扳手
+    action: PICK
+    object_class: torque_wrench
+    source_zone: tool_rack_A
+    predecessors: [S020]
+    min_confidence: 0.85
+  - code: S040
+    name: 执行紧固
+    action: OPERATE_TOOL
+    object_class: torque_wrench
+    target_zone: assembly_zone
+    predecessors: [S030]
+    min_confidence: 0.85
+  - code: S050
+    name: 检查结果
+    action: INSPECT
+    target_zone: assembly_zone
+    predecessors: [S040]
+    min_confidence: 0.75
+rules:
+  - id: R-S010-OBJECT-01
+    step: S010
+    action: PICK
+    object_class: component_A
+    violation:
+      type: WRONG_OBJECT
+      severity: MAJOR
+      message: S010拿取了错误工件
+  - id: R-S020-ZONE-01
+    step: S020
+    action: PLACE
+    target_zone: assembly_zone
+    violation:
+      type: SPATIAL
+      severity: MAJOR
+      message: S020工件未放入装配区域
+  - id: R-S030-TOOL-01
+    step: S030
+    action: PICK
+    object_class: torque_wrench
+    violation:
+      type: WRONG_TOOL
+      severity: MAJOR
+      message: S030必须使用扭矩扳手
+  - id: R-S040-ZONE-01
+    step: S040
+    action: OPERATE_TOOL
+    target_zone: assembly_zone
+    violation:
+      type: SPATIAL
+      severity: MAJOR
+      message: S040必须在装配区域执行紧固
