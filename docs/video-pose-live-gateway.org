@@ -1,0 +1,60 @@
+#+TITLE: Video Pose Live Video Gateway
+#+SUBTITLE: RTSP Capture, In-memory Frame Store and Four-view Synchronization
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 目标
+
+离线录像和实时 RTSP 在同一个边界汇合:
+
+#+BEGIN_SRC text
+Offline ReplayPlanner ----+
+                          |
+                          v
+                 SynchronizedFrameSet
+                          ^
+                          |
+LiveFrameSynchronizer ----+
+#+END_SRC
+
+因此 Perception, Action 和 Rule 层不区分输入来自录像还是实时摄像头.
+
+* 2. MemoryFrameStore
+
+实时帧保存在有上限的内存 FrameStore.
+
+FrameRef 使用:
+
+#+BEGIN_SRC text
+memory://camera-id/sequence
+#+END_SRC
+
+现有 =FrameLoader= 契约保持不变.
+
+* 3. Live Synchronizer
+
+每路帧时间:
+
+#+BEGIN_SRC text
+normalized = capture_timestamp + clock_offset
+#+END_SRC
+
+以 FRONT 为默认 reference, 从其他三路环形缓冲中选择最接近时间的帧.
+
+只有四路 skew 不超过 =sync_tolerance_ms= 时才生成 FrameSet.
+
+* 4. OpenCV Live Gateway
+
+=ThreadedLiveGateway= 为每路摄像头创建读取线程.
+
+第一版使用 monotonic capture time.
+
+生产增强方向:
+
+- GStreamer appsink.
+- RTSP source timestamp / RTP timestamp.
+- hardware decode.
+- PTP.
+- reconnect state machine.
+- camera health metrics.
+- backpressure/drop policy.
