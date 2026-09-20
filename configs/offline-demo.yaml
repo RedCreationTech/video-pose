@@ -34,4 +34,19 @@ identity:
   distance_threshold: 120
   max_missed: 10
 
+triangulation:
+  enabled: false
+  calibration: ../fixtures/calibration/perspective-demo.yaml
+  max_reprojection_rmse: 5.0
+
+actions:
+  tool_classes:
+    - torque_wrench
+  operation_zones:
+    - assembly_zone
+  tool_min_path_length: 40
+  enable_zone_transitions: false
+  zone_entity_classes:
+    - person
+
 action_min_confidence: 0.75

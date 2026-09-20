@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .action_composite import CompositeActionRecognizer
 from .adapters.mmpose_topdown import MMPoseTopDownEstimator
 from .adapters.opencv_file import OpenCVFileFrameLoader
 from .adapters.ultralytics_yolo import UltralyticsDetector
@@ -14,10 +15,12 @@ from .pipeline import VideoPosePipeline
 from .relations import HumanObjectRelationBuilder
 from .rules import RuleEngine
 from .runtime_config import LoadedAnalysisConfig
+from .tool_operation import ToolOperationRecognizer
 from .triangulation import TriangulationProcessor
 from .video_replay import ReplayPlanner
 from .world_identity import MultiViewIdentityProcessor
 from .world_projection import WorldProjectionProcessor
+from .zone_actions import ZoneTransitionRecognizer
 from .zones import ZoneRelationBuilder, load_zones
 
 
@@ -119,12 +122,35 @@ def build_offline_runtime(config: LoadedAnalysisConfig) -> OfflineAnalysisRuntim
         )
     )
 
-    pipeline = VideoPosePipeline(
-        perception=perception,
-        action_recognizer=PickPlaceActionRecognizer(
+    recognizers = [
+        PickPlaceActionRecognizer(
             session_id,
             min_confidence=cfg.action_min_confidence,
-        ),
+        )
+    ]
+    if cfg.actions.tool_classes:
+        recognizers.append(
+            ToolOperationRecognizer(
+                session_id,
+                tool_classes=cfg.actions.tool_classes,
+                operation_zones=(
+                    cfg.actions.operation_zones or None
+                ),
+                min_path_length=cfg.actions.tool_min_path_length,
+                min_confidence=cfg.action_min_confidence,
+            )
+        )
+    if cfg.actions.enable_zone_transitions:
+        recognizers.append(
+            ZoneTransitionRecognizer(
+                session_id,
+                entity_classes=cfg.actions.zone_entity_classes or None,
+            )
+        )
+
+    pipeline = VideoPosePipeline(
+        perception=perception,
+        action_recognizer=CompositeActionRecognizer(recognizers),
         observation_processors=processors,
         observation_enrichers=enrichers,
     )

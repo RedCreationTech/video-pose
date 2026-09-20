@@ -1,0 +1,67 @@
+#+TITLE: Video Pose Industrial Action Baselines
+#+SUBTITLE: 可解释的区域动作与工具操作识别
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 动作识别策略
+
+首批动作继续采用可解释 baseline:
+
+- PICK.
+- PLACE.
+- ENTER_ZONE.
+- LEAVE_ZONE.
+- OPERATE_TOOL.
+
+Temporal Transformer 作为后续可替换实现.
+
+* 2. ENTER_ZONE / LEAVE_ZONE
+
+Zone Builder 现在可以作用于:
+
+- OBJECT.
+- PERSON.
+- BODY_KEYPOINT.
+
+因此可以描述:
+
+- 人进入危险区域.
+- 手进入禁止区域.
+- 工件进入装配区域.
+
+* 3. OPERATE_TOOL
+
+Baseline 条件:
+
+#+BEGIN_SRC text
+tool HELD_BY hand
+AND tool IN operation_zone
+AND accumulated 3D path >= threshold
+THEN OPERATE_TOOL
+#+END_SRC
+
+适合第一阶段:
+
+- 扳手.
+- 手持扫描器.
+- 手工工具.
+- 移动式检测工具.
+
+对于旋转中心几乎不移动的工具, 后续加入姿态角/工具方向估计.
+
+* 4. CompositeActionRecognizer
+
+多个 recognizer 输出最终统一重编号:
+
+#+BEGIN_SRC text
+PICK recognizer
+ZONE recognizer
+TOOL recognizer
+      |
+      v
+CompositeActionRecognizer
+      |
+global ordered ActionEvent sequence
+#+END_SRC
+
+避免多个局部 recognizer 产生重复 sequence.
