@@ -1,0 +1,64 @@
+#+TITLE: Video Pose 72h Soak Test
+#+SUBTITLE: 长时稳定性采样与自动 Release Gate
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 运行
+
+#+BEGIN_SRC sh
+video-pose-soak \
+  --config configs/live-demo.yaml \
+  --duration-hours 72 \
+  --sample-seconds 60 \
+  --output output/soak-72h.json
+#+END_SRC
+
+* 2. 默认 Gate
+
+- ready ratio >= 0.99.
+- frame-set drop ratio <= 0.05.
+- processing errors = 0.
+- camera read errors <= 100.
+- camera reconnects <= 20.
+- max processing latency <= 1000 ms.
+
+全部阈值均可 CLI 覆盖.
+
+* 3. 报告
+
+输出 JSON:
+
+#+BEGIN_SRC text
+duration_s
+sample_count
+ready_ratio
+frame_sets_received_total
+frame_sets_processed_total
+frame_sets_dropped_total
+drop_ratio
+processing_errors_total
+camera_read_errors_total
+camera_reconnect_total
+max_processing_latency_ms
+passed
+failures[]
+#+END_SRC
+
+* 4. 为什么使用累计计数
+
+实时 Health Registry 的 counter 单调累计.
+
+Soak Monitor 周期采样 snapshot, 最终使用最新 counter 和全过程最大延迟判断 Gate, 便于与 Prometheus 指标对齐.
+
+* 5. 现场建议
+
+72 小时测试期间额外保留:
+
+- Prometheus 时序.
+- 应用日志.
+- GPU utilization/memory.
+- 系统 RSS.
+- RTSP 网络丢包.
+- 磁盘空间.
+
+下一阶段加入资源采样和 P95/P99 latency histogram.
