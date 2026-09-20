@@ -333,6 +333,42 @@ class PersistentLiveSessionController:
             }
         return result
 
+    def list_evidence(
+        self,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        method = getattr(self.hub, "list_evidence", None)
+        if not callable(method):
+            return []
+        return method(session_id)
+
+    def evidence_manifest(
+        self,
+        session_id: str,
+        evidence_id: str,
+    ) -> dict[str, Any] | None:
+        method = getattr(self.hub, "evidence_manifest", None)
+        if not callable(method):
+            return None
+        return method(session_id, evidence_id)
+
+    def evidence_file(
+        self,
+        session_id: str,
+        evidence_id: str,
+        camera_id: str,
+        filename: str,
+    ) -> bytes:
+        method = getattr(self.hub, "evidence_file", None)
+        if not callable(method):
+            raise LookupError("evidence service is unavailable")
+        return method(
+            session_id,
+            evidence_id,
+            camera_id,
+            filename,
+        )
+
     def _handle_update(self, update: LiveAnalysisUpdate) -> None:
         with self._lock:
             state = self._state

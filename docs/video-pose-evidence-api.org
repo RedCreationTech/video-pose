@@ -1,0 +1,24 @@
+#+TITLE: Video Pose Evidence API
+#+SUBTITLE: 受保护的四路违规证据访问接口
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. 权限
+
+新增 =evidence:read=.
+
+默认允许 ADMIN, ENGINEER, SUPERVISOR, REVIEWER, AUDITOR. OPERATOR 默认拒绝历史证据访问.
+
+* 2. API
+
+#+BEGIN_SRC text
+GET /api/v1/sessions/{session_id}/evidence
+GET /api/v1/sessions/{session_id}/evidence/{evidence_id}
+GET /api/v1/sessions/{session_id}/evidence/{evidence_id}/files/{camera_id}/{filename}
+#+END_SRC
+
+证据文件使用 =Cache-Control: private, no-store=.
+
+* 3. 复核关联
+
+Evidence manifest 保存 =rule_id + step_code + event_id=. 待复核违规保存相同稳定身份, 因此前端可以直接将人工复核任务与证据包对应.

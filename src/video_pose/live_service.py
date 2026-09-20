@@ -252,6 +252,67 @@ def create_managed_live_app(
     ) -> dict[str, Any]:
         return controller.persistence_health()
 
+    @app.get("/api/v1/sessions/{session_id}/evidence")
+    def list_evidence(
+        session_id: str,
+        _principal: Any = Depends(require(Permission.EVIDENCE_READ)),
+    ) -> Any:
+        method = getattr(controller, "list_evidence", None)
+        if not callable(method):
+            return []
+        return method(session_id)
+
+    @app.get(
+        "/api/v1/sessions/{session_id}/evidence/{evidence_id}"
+    )
+    def get_evidence_manifest(
+        session_id: str,
+        evidence_id: str,
+        _principal: Any = Depends(require(Permission.EVIDENCE_READ)),
+    ) -> Any:
+        method = getattr(controller, "evidence_manifest", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="evidence service is unavailable",
+            )
+        payload = method(session_id, evidence_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="evidence not found")
+        return payload
+
+    @app.get(
+        "/api/v1/sessions/{session_id}/evidence/{evidence_id}/"
+        "files/{camera_id}/{filename}"
+    )
+    def get_evidence_file(
+        session_id: str,
+        evidence_id: str,
+        camera_id: str,
+        filename: str,
+        _principal: Any = Depends(require(Permission.EVIDENCE_READ)),
+    ) -> Any:
+        method = getattr(controller, "evidence_file", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="evidence service is unavailable",
+            )
+        try:
+            content = method(
+                session_id,
+                evidence_id,
+                camera_id,
+                filename,
+            )
+        except (LookupError, FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return Response(
+            content=content,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.get("/api/v1/reviews/pending")
     def pending_reviews(
         limit: int = Query(default=100, ge=1, le=1000),
