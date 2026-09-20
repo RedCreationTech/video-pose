@@ -48,3 +48,31 @@ def probe_video(path: str | Path) -> VideoProbe:
         duration_s=float(payload.get("format", {}).get("duration", 0.0)),
         codec=str(stream.get("codec_name", "unknown")),
     )
+
+
+def probe_frame_timestamps(path: str | Path) -> list[float]:
+    """Return video frame timestamps in milliseconds using ffprobe."""
+
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "frame=best_effort_timestamp_time",
+        "-of",
+        "json",
+        str(path),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=True)
+    payload = json.loads(completed.stdout)
+    timestamps: list[float] = []
+    for frame in payload.get("frames", []):
+        raw = frame.get("best_effort_timestamp_time")
+        if raw is None:
+            continue
+        timestamps.append(float(raw) * 1000.0)
+    if not timestamps:
+        raise ValueError(f"no frame timestamps found in {path}")
+    return timestamps
