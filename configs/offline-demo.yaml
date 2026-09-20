@@ -48,5 +48,9 @@ actions:
   enable_zone_transitions: false
   zone_entity_classes:
     - person
+  inspect_zones: []
+  inspect_entity_classes:
+    - nose
+  inspect_dwell_frames: 5
 
 action_min_confidence: 0.75

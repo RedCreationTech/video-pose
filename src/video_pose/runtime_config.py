@@ -50,6 +50,11 @@ class IndustrialActionRuntimeConfig(BaseModel):
     tool_min_path_length: float = Field(default=40.0, gt=0.0)
     enable_zone_transitions: bool = False
     zone_entity_classes: set[str] = Field(default_factory=lambda: {"person"})
+    inspect_zones: set[str] = Field(default_factory=set)
+    inspect_entity_classes: set[str] = Field(
+        default_factory=lambda: {"nose"}
+    )
+    inspect_dwell_frames: int = Field(default=5, ge=1)
 
 
 class OfflineAnalysisConfig(BaseModel):

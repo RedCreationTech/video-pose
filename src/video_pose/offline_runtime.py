@@ -8,6 +8,8 @@ from .adapters.opencv_file import OpenCVFileFrameLoader
 from .adapters.ultralytics_yolo import UltralyticsDetector
 from .baseline_action import PickPlaceActionRecognizer
 from .calibration import load_planar_calibration
+from .contracts import ActionType
+from .dwell_action import DwellZoneActionRecognizer
 from .perception import MultiViewPerceptionAdapter
 from .perception_v1 import PerceptionV1Model
 from .perspective import load_perspective_calibration
@@ -145,6 +147,17 @@ def build_offline_runtime(config: LoadedAnalysisConfig) -> OfflineAnalysisRuntim
             ZoneTransitionRecognizer(
                 session_id,
                 entity_classes=cfg.actions.zone_entity_classes or None,
+            )
+        )
+    if cfg.actions.inspect_zones:
+        recognizers.append(
+            DwellZoneActionRecognizer(
+                session_id,
+                action=ActionType.INSPECT,
+                zones=cfg.actions.inspect_zones,
+                entity_classes=cfg.actions.inspect_entity_classes or None,
+                dwell_frames=cfg.actions.inspect_dwell_frames,
+                min_confidence=cfg.action_min_confidence,
             )
         )
 

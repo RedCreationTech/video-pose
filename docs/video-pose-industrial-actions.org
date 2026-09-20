@@ -1,37 +1,20 @@
 #+TITLE: Video Pose Industrial Action Baselines
-#+SUBTITLE: 可解释的区域动作与工具操作识别
+#+SUBTITLE: Pick, Place, Operate Tool, Zone Transition and Inspect
 #+AUTHOR: RedCreationTech
 #+DATE: 2026-09-20
 
-* 1. 动作识别策略
+* 1. 首批工业动作
 
-首批动作继续采用可解释 baseline:
+当前可解释 baseline:
 
 - PICK.
 - PLACE.
 - ENTER_ZONE.
 - LEAVE_ZONE.
 - OPERATE_TOOL.
+- INSPECT.
 
-Temporal Transformer 作为后续可替换实现.
-
-* 2. ENTER_ZONE / LEAVE_ZONE
-
-Zone Builder 现在可以作用于:
-
-- OBJECT.
-- PERSON.
-- BODY_KEYPOINT.
-
-因此可以描述:
-
-- 人进入危险区域.
-- 手进入禁止区域.
-- 工件进入装配区域.
-
-* 3. OPERATE_TOOL
-
-Baseline 条件:
+* 2. OPERATE_TOOL
 
 #+BEGIN_SRC text
 tool HELD_BY hand
@@ -40,28 +23,61 @@ AND accumulated 3D path >= threshold
 THEN OPERATE_TOOL
 #+END_SRC
 
-适合第一阶段:
+* 3. INSPECT
 
-- 扳手.
-- 手持扫描器.
-- 手工工具.
-- 移动式检测工具.
+使用 Zone Dwell baseline.
 
-对于旋转中心几乎不移动的工具, 后续加入姿态角/工具方向估计.
-
-* 4. CompositeActionRecognizer
-
-多个 recognizer 输出最终统一重编号:
+例如 nose/head keypoint 在 inspection_zone 连续 N 帧:
 
 #+BEGIN_SRC text
-PICK recognizer
-ZONE recognizer
-TOOL recognizer
-      |
-      v
-CompositeActionRecognizer
-      |
-global ordered ActionEvent sequence
+nose IN inspection_zone
+        |
+stable N frames
+        |
+INSPECT
 #+END_SRC
 
-避免多个局部 recognizer 产生重复 sequence.
+后续可以升级为:
+
+- head pose.
+- gaze estimation.
+- inspection device state.
+- multimodal temporal model.
+
+* 4. Zone Transition
+
+Zone Builder 支持:
+
+- OBJECT.
+- PERSON.
+- BODY_KEYPOINT.
+
+因此可以生成:
+
+- ENTER_ZONE.
+- LEAVE_ZONE.
+
+适合安全区和禁止区域规则.
+
+* 5. CompositeActionRecognizer
+
+各 recognizer 的局部 event sequence 会重新排序和全局编号, 保证 Rule Engine 的事件流一致.
+
+* 6. Extended SOP
+
+仓库提供:
+
+#+BEGIN_SRC text
+fixtures/rules/assembly-tool.yaml
+fixtures/replay/assembly-tool-compliant.jsonl
+#+END_SRC
+
+用于验证:
+
+#+BEGIN_SRC text
+PICK part
+ -> PLACE part
+ -> PICK torque wrench
+ -> OPERATE_TOOL
+ -> INSPECT
+#+END_SRC

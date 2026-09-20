@@ -1,0 +1,56 @@
+operation: assembly_tool_demo
+version: 1
+steps:
+  - code: S010
+    name: 拿取工件
+    action: PICK
+    object_class: component_A
+    source_zone: component_bin_A
+  - code: S020
+    name: 放置工件
+    action: PLACE
+    object_class: component_A
+    target_zone: assembly_zone
+    predecessors: [S010]
+  - code: S030
+    name: 拿取扭矩扳手
+    action: PICK
+    object_class: torque_wrench
+    source_zone: tool_rack_A
+    predecessors: [S020]
+  - code: S040
+    name: 执行工具操作
+    action: OPERATE_TOOL
+    object_class: torque_wrench
+    target_zone: assembly_zone
+    predecessors: [S030]
+  - code: S050
+    name: 检查结果
+    action: INSPECT
+    target_zone: inspection_zone
+    predecessors: [S040]
+rules:
+  - id: R-S030-TOOL-01
+    step: S030
+    action: PICK
+    object_class: torque_wrench
+    violation:
+      type: WRONG_TOOL
+      severity: MAJOR
+      message: 必须使用扭矩扳手
+  - id: R-S040-ZONE-01
+    step: S040
+    action: OPERATE_TOOL
+    target_zone: assembly_zone
+    violation:
+      type: SPATIAL
+      severity: MAJOR
+      message: 工具必须在装配区域操作
+  - id: R-S050-ZONE-01
+    step: S050
+    action: INSPECT
+    target_zone: inspection_zone
+    violation:
+      type: SPATIAL
+      severity: MAJOR
+      message: 必须在检查区域完成检查

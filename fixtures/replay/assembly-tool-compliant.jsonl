@@ -1,0 +1,5 @@
+{"event_id":"e1","session_id":"assembly-tool-ok","sequence":1,"action":"PICK","object":{"id":"part-1","class":"component_A"},"source_zone":"component_bin_A","started_at_ms":1000,"confidence":0.96}
+{"event_id":"e2","session_id":"assembly-tool-ok","sequence":2,"action":"PLACE","object":{"id":"part-1","class":"component_A"},"target_zone":"assembly_zone","started_at_ms":2000,"confidence":0.96}
+{"event_id":"e3","session_id":"assembly-tool-ok","sequence":3,"action":"PICK","object":{"id":"tool-1","class":"torque_wrench"},"source_zone":"tool_rack_A","started_at_ms":3000,"confidence":0.95}
+{"event_id":"e4","session_id":"assembly-tool-ok","sequence":4,"action":"OPERATE_TOOL","object":{"id":"tool-1","class":"torque_wrench"},"target_zone":"assembly_zone","started_at_ms":4000,"confidence":0.94}
+{"event_id":"e5","session_id":"assembly-tool-ok","sequence":5,"action":"INSPECT","target_zone":"inspection_zone","started_at_ms":5000,"confidence":0.92}
