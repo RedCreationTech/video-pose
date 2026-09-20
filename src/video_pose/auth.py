@@ -27,6 +27,7 @@ class Permission(StrEnum):
     PERSISTENCE_READ = "persistence:read"
     METRICS_READ = "metrics:read"
     REALTIME_READ = "realtime:read"
+    VIOLATION_REVIEW = "violation:review"
 
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
@@ -51,6 +52,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.SESSION_START,
             Permission.SESSION_CONTROL,
             Permission.REALTIME_READ,
+            Permission.VIOLATION_REVIEW,
         }
     ),
     Role.REVIEWER: frozenset(
@@ -59,6 +61,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.CAMERA_READ,
             Permission.SESSION_READ,
             Permission.REALTIME_READ,
+            Permission.VIOLATION_REVIEW,
         }
     ),
     Role.OPERATOR: frozenset(

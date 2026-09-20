@@ -1,0 +1,51 @@
+#+TITLE: Video Pose Violation Review
+#+SUBTITLE: 自动违规判定的人工复核, 审计与灾难恢复
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. 原则
+
+人工复核不覆盖原始 AI 违规. SQL 保存最新复核状态, =reviews.jsonl= 保存完整复核历史.
+
+* 2. 状态
+
+#+BEGIN_SRC text
+UNREVIEWED
+   |
+   +--> CONFIRMED
+   |
+   +--> DISMISSED
+#+END_SRC
+
+* 3. 权限
+
+新增 =violation:review=.
+
+默认允许:
+
+- ADMIN.
+- SUPERVISOR.
+- REVIEWER.
+
+默认拒绝:
+
+- ENGINEER.
+- OPERATOR.
+- AUDITOR.
+
+* 4. API
+
+#+BEGIN_SRC text
+GET  /api/v1/reviews/pending
+POST /api/v1/sessions/{session_id}/violations/{violation_id}/review
+#+END_SRC
+
+* 5. 可恢复审计
+
+每次复核先追加到:
+
+#+BEGIN_SRC text
+output/sessions/{session_id}/reviews.jsonl
+#+END_SRC
+
+审计使用 =rule_id + step_code + event_id= 稳定身份. =video-pose-reindex= 重建数据库时据此恢复人工复核, 不依赖数据库自增 id.

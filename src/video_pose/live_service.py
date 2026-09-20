@@ -14,6 +14,7 @@ from .auth import (
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
 from .session_controller import SessionStartRequest
+from .violation_review import ViolationReviewRequest
 
 
 def create_live_app(
@@ -250,6 +251,43 @@ def create_managed_live_app(
         _principal: Any = Depends(require(Permission.PERSISTENCE_READ)),
     ) -> dict[str, Any]:
         return controller.persistence_health()
+
+    @app.get("/api/v1/reviews/pending")
+    def pending_reviews(
+        limit: int = Query(default=100, ge=1, le=1000),
+        _principal: Any = Depends(require(Permission.VIOLATION_REVIEW)),
+    ) -> Any:
+        method = getattr(controller, "list_pending_reviews", None)
+        if not callable(method):
+            return []
+        return method(limit)
+
+    @app.post(
+        "/api/v1/sessions/{session_id}/violations/{violation_id}/review"
+    )
+    def review_violation(
+        session_id: str,
+        violation_id: int,
+        request: ViolationReviewRequest,
+        principal: Any = Depends(require(Permission.VIOLATION_REVIEW)),
+    ) -> Any:
+        method = getattr(controller, "review_violation", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="violation review is unavailable",
+            )
+        try:
+            return method(
+                session_id,
+                violation_id,
+                request,
+                reviewer=principal.subject,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/api/v1/sessions/{session_id}/stop")
     def stop_session(

@@ -24,6 +24,7 @@ from .session_runtime import (
     build_session_analysis_runtime,
 )
 from .session_store import SessionStore
+from .violation_review import ViolationReviewRequest
 
 
 def _utc_now() -> str:
@@ -261,6 +262,76 @@ class PersistentLiveSessionController:
         if self.repository is None:
             return None
         return self.repository.get_session(session_id)
+
+    def list_pending_reviews(
+        self,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        if self.repository is None:
+            return []
+        method = getattr(self.repository, "list_pending_reviews", None)
+        if not callable(method):
+            return []
+        return method(limit)
+
+    def review_violation(
+        self,
+        session_id: str,
+        violation_id: int,
+        review: ViolationReviewRequest,
+        *,
+        reviewer: str,
+    ) -> dict[str, Any]:
+        if self.repository is None:
+            raise RuntimeError("review repository is unavailable")
+
+        session_payload = self.repository.get_session(session_id)
+        if session_payload is None:
+            raise LookupError("session not found")
+        violation = next(
+            (
+                item
+                for item in session_payload.get("violations", [])
+                if int(item.get("id", -1)) == violation_id
+            ),
+            None,
+        )
+        if violation is None:
+            raise LookupError("violation not found")
+
+        reviewed_at = _utc_now()
+        audit_payload = {
+            "session_id": session_id,
+            "violation_id": violation_id,
+            "rule_id": str(violation.get("rule_id", "")),
+            "step_code": str(violation.get("step_code", "")),
+            "event_id": str(violation.get("event_id", "")),
+            "reviewer": reviewer,
+            "reviewed_at": reviewed_at,
+            "review": review.model_dump(mode="json"),
+        }
+        self.audit.append_review(session_id, audit_payload)
+
+        method = getattr(self.repository, "review_violation", None)
+        if not callable(method):
+            return {
+                **audit_payload,
+                "persistence_status": "AUDIT_ONLY",
+            }
+
+        result = method(
+            session_id,
+            violation_id,
+            review,
+            reviewer=reviewer,
+            reviewed_at=datetime.fromisoformat(reviewed_at),
+        )
+        if result is None:
+            return {
+                **audit_payload,
+                "persistence_status": "DEGRADED",
+            }
+        return result
 
     def _handle_update(self, update: LiveAnalysisUpdate) -> None:
         with self._lock:
