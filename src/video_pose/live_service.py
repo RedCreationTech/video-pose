@@ -148,6 +148,7 @@ def create_managed_live_app(
         Header,
         HTTPException,
         Response,
+        WebSocket,
         WebSocketDisconnect,
         JSONResponse,
     )
