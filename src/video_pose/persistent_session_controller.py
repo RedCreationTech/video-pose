@@ -38,7 +38,7 @@ class PersistentLiveSessionController:
         config: LoadedAnalysisConfig,
         *,
         hub: PersistentCameraHub,
-        model_pool: PersistentModelPool,
+        model_pool: PersistentModelPool | None = None,
         audit_root: str | Path,
         processing_queue_size: int = 2,
         runtime_factory: Callable[
@@ -60,7 +60,8 @@ class PersistentLiveSessionController:
         self._event_callback: Callable[[LiveAnalysisUpdate], Any] | None = None
 
     def start_hub(self) -> None:
-        self.model_pool.load()
+        if self.model_pool is not None:
+            self.model_pool.load()
         self.hub.start()
 
     def shutdown(self) -> None:
@@ -87,7 +88,10 @@ class PersistentLiveSessionController:
         with self._lock:
             if not self.hub.running:
                 raise RuntimeError("persistent camera hub is not running")
-            if not self.model_pool.loaded:
+            if (
+                self.model_pool is not None
+                and not self.model_pool.loaded
+            ):
                 raise RuntimeError("persistent model pool is not loaded")
             if (
                 self._state is not None
@@ -96,12 +100,16 @@ class PersistentLiveSessionController:
                 raise RuntimeError("a live session is already running")
 
             session_id = request.session_id or str(uuid.uuid4())
+            runtime_kwargs: dict[str, Any] = {
+                "hub": self.hub,
+                "processing_queue_size": self.processing_queue_size,
+                "session_id": session_id,
+            }
+            if self.model_pool is not None:
+                runtime_kwargs["model_pool"] = self.model_pool
             runtime = self.runtime_factory(
                 self.config,
-                hub=self.hub,
-                model_pool=self.model_pool,
-                processing_queue_size=self.processing_queue_size,
-                session_id=session_id,
+                **runtime_kwargs,
             )
             rule_set = runtime.rule_session.engine.rule_set
             started_at = _utc_now()
