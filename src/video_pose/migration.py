@@ -5,7 +5,6 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
-
 _ROOT = Path(__file__).resolve().parents[2]
 _MIGRATIONS = _ROOT / "migrations"
 
