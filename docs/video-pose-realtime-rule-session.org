@@ -1,0 +1,67 @@
+#+TITLE: Video Pose Realtime Rule Session
+#+SUBTITLE: 持续动作事件输入, Delta 输出与实时超时
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+
+* 1. 目标
+
+离线 Replay 和在线实时判定必须共享同一个 Rule Engine.
+
+#+BEGIN_SRC text
+ActionEvent stream
+      |
+RealtimeRuleSession
+      |
+deterministic RuleEngine
+      |
+RuleSessionUpdate
+  + new_violations
+  + changed_steps
+  + current result
+#+END_SRC
+
+* 2. ingest
+
+#+BEGIN_SRC python
+update = session.ingest(action_event)
+#+END_SRC
+
+立即返回:
+
+- 新产生的违规.
+- 状态变化的步骤.
+- 当前 score/pass 状态.
+
+重复 event_id/sequence 不会重复处理.
+
+* 3. tick
+
+没有新动作时仍需要检查超时:
+
+#+BEGIN_SRC python
+update = session.tick(now_ms)
+#+END_SRC
+
+因此 root step 和 READY step 的 max_start_delay_ms 可以实时触发 TIMEOUT.
+
+* 4. finish
+
+Session 结束:
+
+#+BEGIN_SRC python
+final = session.finish(session_end_ms)
+#+END_SRC
+
+此时额外执行最终 MISSING 检查.
+
+* 5. 实现策略
+
+当前 RealtimeRuleSession 在每次变更时重新重放事件历史.
+
+优势:
+
+- 与 Golden Replay 完全同口径.
+- 行为确定.
+- 易于调试.
+
+后续活跃 Session 数量增大后, 可以把 RuleEngine 内部状态改为增量状态机, 但外部 API 保持不变.

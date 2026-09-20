@@ -1,0 +1,10 @@
+operation: realtime_timeout_demo
+version: 1
+steps:
+  - code: S010
+    name: 开始拿取工件
+    action: PICK
+    object_class: component_A
+    source_zone: component_bin_A
+    max_start_delay_ms: 1000
+    timeout_severity: MAJOR

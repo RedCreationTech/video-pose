@@ -28,7 +28,7 @@ class _SessionState:
 
 
 class RuleEngine:
-    """Deterministic MVP rule engine for replay and contract stabilization."""
+    """Deterministic rule engine shared by replay and realtime sessions."""
 
     def __init__(self, rule_set: RuleSet) -> None:
         self.rule_set = rule_set
@@ -47,17 +47,14 @@ class RuleEngine:
         events: Iterable[ActionEvent],
         *,
         session_end_ms: int | None = None,
+        finalize: bool = True,
+        session_id: str | None = None,
     ) -> ReplayResult:
         ordered = sorted(
             events,
             key=lambda item: (item.sequence, item.started_at_ms, item.event_id),
         )
-        if not ordered:
-            raise ValueError("at least one action event is required")
-
-        session_ids = {event.session_id for event in ordered}
-        if len(session_ids) != 1:
-            raise ValueError("all events must belong to the same session")
+        resolved_session_id = self._resolve_session_id(ordered, session_id)
 
         state = _SessionState(
             steps={
@@ -74,7 +71,11 @@ class RuleEngine:
             violations=[],
             order_violation_steps=set(),
             completed_at_ms={},
-            ready_at_ms={},
+            ready_at_ms={
+                step.code: 0
+                for step in self.rule_set.steps
+                if not step.predecessors
+            },
         )
 
         seen_sequences: set[int] = set()
@@ -88,11 +89,19 @@ class RuleEngine:
             self._refresh_ready_steps(state)
 
         inferred_end = max(
-            event.ended_at_ms or event.started_at_ms for event in ordered
+            (
+                event.ended_at_ms or event.started_at_ms
+                for event in ordered
+            ),
+            default=0,
         )
-        final_time = session_end_ms if session_end_ms is not None else inferred_end
-        self._finalize_timeouts(state, final_time)
-        self._finalize_missing_required_steps(state)
+        if session_end_ms is not None:
+            self._finalize_timeouts(state, session_end_ms)
+        elif finalize:
+            self._finalize_timeouts(state, inferred_end)
+
+        if finalize:
+            self._finalize_missing_required_steps(state)
 
         score = self._score(state.violations)
         passed = not any(
@@ -100,7 +109,7 @@ class RuleEngine:
             for violation in state.violations
         )
         return ReplayResult(
-            session_id=ordered[0].session_id,
+            session_id=resolved_session_id,
             operation=self.rule_set.operation,
             rule_set_version=self.rule_set.version,
             steps=[state.steps[step.code] for step in self.rule_set.steps],
@@ -108,6 +117,26 @@ class RuleEngine:
             score=score,
             passed=passed,
         )
+
+    @staticmethod
+    def _resolve_session_id(
+        events: list[ActionEvent],
+        explicit: str | None,
+    ) -> str:
+        if not events:
+            if explicit is None:
+                raise ValueError(
+                    "session_id is required when evaluating an empty event stream"
+                )
+            return explicit
+
+        session_ids = {event.session_id for event in events}
+        if len(session_ids) != 1:
+            raise ValueError("all events must belong to the same session")
+        resolved = events[0].session_id
+        if explicit is not None and explicit != resolved:
+            raise ValueError("explicit session_id does not match event stream")
+        return resolved
 
     def _apply_event(self, state: _SessionState, event: ActionEvent) -> None:
         candidate_steps = [
@@ -153,8 +182,9 @@ class RuleEngine:
                 event_id=event.event_id,
                 confidence=event.confidence,
             )
-            completed_at = event.ended_at_ms or event.started_at_ms
-            state.completed_at_ms[step.code] = completed_at
+            state.completed_at_ms[step.code] = (
+                event.ended_at_ms or event.started_at_ms
+            )
 
             duration_violation = self._duration_violation(step, event)
             if duration_violation is not None:
@@ -272,8 +302,6 @@ class RuleEngine:
         step: StepDefinition,
         event: ActionEvent,
     ) -> Violation | None:
-        if not step.predecessors:
-            return None
         ready_at = state.ready_at_ms.get(step.code)
         if ready_at is None:
             return None
@@ -328,11 +356,10 @@ class RuleEngine:
                 code=step.code,
                 state=StepState.READY,
             )
-            if step.predecessors:
-                state.ready_at_ms[step.code] = max(
-                    state.completed_at_ms[predecessor]
-                    for predecessor in step.predecessors
-                )
+            state.ready_at_ms[step.code] = max(
+                state.completed_at_ms[predecessor]
+                for predecessor in step.predecessors
+            )
 
     def _finalize_timeouts(
         self,
