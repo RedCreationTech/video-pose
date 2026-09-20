@@ -4,31 +4,25 @@
 * 当前闭环
 
 #+BEGIN_SRC text
-4路录像 / RTSP-ready architecture
-       |
-Frame Timestamp Sync
-       |
-FrameLoader
-       |
-YOLO Detector
-       |
-Person + Object Tracking
-       |
-RTMPose
-       |
+4路录像
+   |
+Time Sync + FrameLoader
+   |
+YOLO + Tracking + RTMPose
+   |
 Observation
-       |
-Planar World Projection
-       |
-Multi-view World Identity
-       |
-Zone + Human-Object Relations
-       |
-PICK / PLACE ActionEvent
-       |
+   |
+World Projection + Multi-view Identity
+   |
+Zone + Human-Object Relation
+   |
+ActionEvent
+   |
 Rule Engine
-       |
-Violation / Score / Evidence-ready result
+   |
+Violation / Score
+   |
+4-View Evidence Clips + 2x2 Mosaic
 #+END_SRC
 
 * 安装
@@ -47,24 +41,12 @@ pip install -e '.[dev,video,yolo]'
 
 MMPose 需要根据目标 PyTorch/CUDA 环境安装兼容 MMCV.
 
+系统还需要:
+
+- ffprobe, 用于真实帧时间戳.
+- ffmpeg, 用于违规证据裁剪和多视角合成.
+
 * 离线真实视频分析
-
-配置入口:
-
-#+BEGIN_SRC text
-configs/offline-demo.yaml
-#+END_SRC
-
-准备:
-
-- 四路录像.
-- YOLO 工具/工件权重.
-- RTMPose config/checkpoint.
-- calibration.
-- zones.
-- rules.
-
-执行:
 
 #+BEGIN_SRC sh
 video-pose-analyze \
@@ -72,32 +54,38 @@ video-pose-analyze \
   --output result.json
 #+END_SRC
 
-只跑少量同步帧做环境检查:
+同时生成违规证据:
 
 #+BEGIN_SRC sh
 video-pose-analyze \
   --config configs/offline-demo.yaml \
-  --max-frame-sets 100
+  --output result.json \
+  --evidence-dir output/evidence
 #+END_SRC
 
-退出码:
+证据目录示例:
 
-- 0: 有评估结果且通过.
-- 2: 有评估结果但不通过.
-- 3: 没有产生可评估动作.
+#+BEGIN_SRC text
+output/evidence/evidence-0001/
+  front.mp4
+  rear.mp4
+  left.mp4
+  right.mp4
+  multiview.mp4
+#+END_SRC
 
-* 当前 MVP 空间模型
+* 当前 MVP 边界
 
-现在支持平面 Homography, 适合工作台型工位.
+已经具备单工位, 单操作员, 四路录像的 PoC 软件闭环.
 
-下一阶段是完整 3D:
+仍需现场数据完成:
 
-- camera intrinsic/extrinsic.
-- distortion correction.
-- epipolar matching.
-- triangulation.
-- reprojection error.
-- calibration health.
+- 工具/工件 detector fine-tune.
+- RTMPose 目标工位准确率验证.
+- camera calibration.
+- zone 标定.
+- 阈值调优.
+- Golden Replay 数据集.
 
 * 文档
 

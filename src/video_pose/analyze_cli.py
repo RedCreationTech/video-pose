@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .adapters.ffmpeg_evidence import EvidenceArtifact, FFmpegEvidenceWriter
+from .evidence import EvidencePlanner
 from .offline_runtime import build_offline_runtime
 from .runtime_config import load_analysis_config
 
@@ -21,10 +23,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Limit synchronized frame sets for smoke tests",
     )
     parser.add_argument("--output", help="Write JSON result to this file")
+    parser.add_argument(
+        "--evidence-dir",
+        help="Render violation evidence clips into this directory",
+    )
     return parser
 
 
-def _serialize(actions: list[Any], evaluation: Any | None) -> dict[str, Any]:
+def _artifact_dict(artifact: EvidenceArtifact) -> dict[str, Any]:
+    return {
+        "evidence_id": artifact.evidence_id,
+        "directory": artifact.directory,
+        "camera_clips": artifact.camera_clips,
+        "multiview_clip": artifact.multiview_clip,
+    }
+
+
+def _serialize(
+    actions: list[Any],
+    evaluation: Any | None,
+    evidence: list[EvidenceArtifact],
+) -> dict[str, Any]:
     return {
         "actions": [
             action.model_dump(mode="json", by_alias=True) for action in actions
@@ -34,12 +53,14 @@ def _serialize(actions: list[Any], evaluation: Any | None) -> dict[str, Any]:
             if evaluation is not None
             else None
         ),
+        "evidence": [_artifact_dict(item) for item in evidence],
     }
 
 
 def main() -> int:
     args = build_parser().parse_args()
     loaded = load_analysis_config(args.config)
+    evidence_artifacts: list[EvidenceArtifact] = []
 
     with build_offline_runtime(loaded) as runtime:
         frame_sets = runtime.planner.plan()
@@ -48,7 +69,18 @@ def main() -> int:
         actions = runtime.pipeline.process(frame_sets)
         evaluation = runtime.rule_engine.evaluate(actions) if actions else None
 
-    payload = _serialize(actions, evaluation)
+        if args.evidence_dir and evaluation is not None:
+            planner = EvidencePlanner(
+                runtime.planner.manifest,
+                manifest_dir=runtime.planner.manifest_dir,
+            )
+            writer = FFmpegEvidenceWriter()
+            evidence_artifacts = [
+                writer.write_bundle(plan, args.evidence_dir)
+                for plan in planner.plan(actions, evaluation)
+            ]
+
+    payload = _serialize(actions, evaluation, evidence_artifacts)
     rendered = json.dumps(payload, indent=2, ensure_ascii=False)
     if args.output:
         Path(args.output).write_text(rendered + "\n", encoding="utf-8")

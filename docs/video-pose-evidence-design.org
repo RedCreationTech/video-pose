@@ -1,0 +1,105 @@
+#+TITLE: Video Pose Evidence Service Design
+#+SUBTITLE: 违规证据时间映射, 四路裁剪与同步复盘
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-20
+#+OPTIONS: toc:3 num:t
+
+* 1. 目标
+
+每个自动违规结论必须能够回到原始视频证据.
+
+#+BEGIN_SRC text
+Violation
+   |
+event_id
+   |
+ActionEvent time range
+   |
+normalized timeline
+   |
+camera clock offset inverse mapping
+   |
+4 source video ranges
+   |
+FFmpeg clips
+   |
+2x2 multiview evidence
+#+END_SRC
+
+* 2. 时间映射
+
+系统动作时间使用 normalized timeline.
+
+摄像头 manifest 定义:
+
+#+BEGIN_SRC text
+normalized_time = source_time + clock_offset
+#+END_SRC
+
+因此证据回放需要反向计算:
+
+#+BEGIN_SRC text
+source_time = normalized_time - clock_offset
+#+END_SRC
+
+* 3. 默认证据窗口
+
+当前默认:
+
+- pre-roll: 3 s.
+- post-roll: 3 s.
+
+例如动作发生在 12.0 s - 13.0 s:
+
+#+BEGIN_SRC text
+evidence normalized window:
+9.0 s - 16.0 s
+#+END_SRC
+
+* 4. Missing Step
+
+MISSING 可能没有直接 ActionEvent.
+
+当前 MVP 使用最后一个已知 ActionEvent 作为 fallback, 生成流程尾部证据.
+
+后续可以升级为:
+
+- step timeout timestamp.
+- workflow state transition timestamp.
+- session finalization timestamp.
+
+* 5. 四路输出
+
+每个 evidence bundle 目录:
+
+#+BEGIN_SRC text
+evidence-0001/
+  front.mp4
+  rear.mp4
+  left.mp4
+  right.mp4
+  multiview.mp4
+#+END_SRC
+
+multiview 使用 2x2 xstack.
+
+* 6. CLI
+
+#+BEGIN_SRC sh
+video-pose-analyze \
+  --config configs/offline-demo.yaml \
+  --output result.json \
+  --evidence-dir output/evidence
+#+END_SRC
+
+输出 JSON 同时记录每个证据文件路径.
+
+* 7. 后续
+
+- pose overlay.
+- object bbox overlay.
+- rule explanation subtitle.
+- violation timestamp marker.
+- HLS/WebRTC evidence playback.
+- MinIO evidence upload.
+- SHA-256 integrity.
