@@ -12,7 +12,6 @@ from video_pose.session_readiness import (
     SessionReadinessCheck,
     SessionReadinessReport,
 )
-from video_pose.session_controller import SessionStartRequest
 
 
 class FakeController:
