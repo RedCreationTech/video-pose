@@ -17,7 +17,6 @@ from .session_store import SessionStore
 from .structured_log import log_event
 from .violation_review import ViolationReviewRequest
 
-
 LOGGER = logging.getLogger("video_pose.persistence")
 
 

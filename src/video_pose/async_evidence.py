@@ -19,7 +19,6 @@ from .live_health import EvidenceHealthSnapshot
 from .structured_log import log_event
 from .video_replay import FrameRef, SynchronizedFrameSet
 
-
 LOGGER = logging.getLogger("video_pose.evidence")
 
 

@@ -43,7 +43,6 @@ from .storage_health import sample_runtime_storage
 from .structured_log import log_event
 from .violation_review import ViolationReviewRequest
 
-
 LOGGER = logging.getLogger("video_pose.session")
 
 

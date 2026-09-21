@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .live_health import LiveHealthRegistry
-from .structured_log import log_event
 from .live_video import LiveFrameSynchronizer
+from .structured_log import log_event
 from .video_manifest import ReplayManifest
 from .video_replay import SynchronizedFrameSet
 

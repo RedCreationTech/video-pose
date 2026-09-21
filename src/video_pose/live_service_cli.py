@@ -13,7 +13,6 @@ from .resilient_store import ResilientSessionStore
 from .runtime_config import load_analysis_config
 from .structured_log import configure_logging, log_event
 
-
 LOGGER = logging.getLogger("video_pose.service")
 
 
