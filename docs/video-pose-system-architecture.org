@@ -1,397 +1,978 @@
-#+TITLE: Video Pose AI System Architecture
-#+SUBTITLE: C4 Model Design for Human Action Compliance Detection Platform
+#+TITLE: Video Pose System Architecture
+#+SUBTITLE: C4 Model for Production Multi-view Action Compliance Detection
 #+AUTHOR: RedCreationTech
-#+DATE: 2026-09-20
+#+DATE: 2026-09-21
+#+OPTIONS: toc:3 num:t
 
-* 1. 系统概述
+* 1. 文档目的
 
-本系统用于通过多摄像头视频分析持续检测人员动作规范性。
+本文描述 Video Pose 当前生产实现的系统边界, C4 Context, Container, Component, Deployment, 关键数据流和故障语义.
 
-核心目标:
-
-- 通过前后左右四路摄像头采集操作过程
-- 对人员姿态, 手部动作, 工具和对象进行识别
-- 根据标准作业流程判断动作是否符合规范
-- 自动生成评分, 异常记录和复盘视频
-
-系统定位:
+当前基线:
 
 #+BEGIN_SRC text
-Video Input
-    |
-Pose Understanding
-    |
-Action Understanding
-    |
-Process Compliance Engine
-    |
-Quality Assessment
+Video Pose 0.41
 #+END_SRC
 
-* 2. C4 Level 1: System Context
+本系统不是一个通用视频理解平台. 它面向固定工业工位, 通过前后左右四路视频持续观测操作过程, 将视觉事实转换为 ActionEvent, 再使用版本化规则判断动作顺序, 工具, 区域, 时间和操作规范性.
 
-** 系统边界
+核心原则:
+
+- AI 负责识别事实, 最终合规由规则引擎判断.
+- 四路摄像头必须进入统一时间轴.
+- UNKNOWN 和 SYSTEM_QUALITY 是正式业务状态.
+- 不可观测不能被解释为合规.
+- Violation 必须能够回到证据和规则 trace.
+- Immutable Audit 是灾难恢复事实源.
+- PostgreSQL 是可重建的 Query Store.
+- 正式 Session 只有在 Readiness Gate 通过后才能启动.
+- 运行中观测质量下降必须影响最终 Session 结论.
+- Capture timestamp source 必须显式记录和审计.
+
+* 2. 目标与非目标
+
+** 2.1 当前目标
+
+- 单工位.
+- 单主要操作员.
+- 前, 后, 左, 右四路摄像头.
+- 5-20 个标准作业步骤.
+- 人员, 工具, 工件, 区域和关键姿态识别.
+- 顺序, 时间, 工具, 区域, 缺失步骤和系统质量违规.
+- 实时 Session 评分与 PASS/FAIL.
+- 四路违规证据.
+- 人工复核.
+- 7x24 Edge 运行.
+- 可恢复 Audit/SQL 数据链.
+- 可重复 Golden Replay, Fault Replay 和 Managed Soak.
+
+** 2.2 当前不承诺
+
+- 任意开放世界动作理解.
+- 完全无盲区视觉.
+- 完全依靠单一大模型直接判断工艺合规.
+- 把当前 Edge Runtime 强制拆成大量微服务.
+- 在无独立现场验收集时承诺固定准确率.
+- 在完全遮挡场景下承诺零漏报.
+
+* 3. C4 Level 1: System Context
 
 #+BEGIN_SRC text
-+----------------+
-| Operator       |
-| 操作人员       |
-+-------+--------+
-        |
-        | performs operation
-        v
-+--------------------------------+
-| Video Pose AI Platform         |
-| 动作规范检测平台               |
-+--------------------------------+
-        |
-        +----------------+
-        |                |
-        v                v
-+-------------+    +-------------+
-| Supervisor  |    | Training    |
-| 管理人员    |    | System      |
-+-------------+    +-------------+
++---------------------+
+| Operator            |
+| 操作人员            |
++----------+----------+
+           |
+           | performs operation
+           v
++------------------------------------------------------+
+| Video Pose                                            |
+| Multi-view Action Compliance Detection Platform      |
+|                                                      |
+| observe -> understand -> rules -> evidence -> audit  |
++-----------+-----------------------+------------------+
+            |                       |
+            | realtime/result       | review/evidence
+            v                       v
++----------------------+   +--------------------------+
+| Supervisor/Reviewer  |   | Process Engineer/Admin   |
++----------------------+   +--------------------------+
+
+            ^
+            |
+            | 4 x RTSP
++-----------+------------------------------------------+
+| Front / Rear / Left / Right Cameras                 |
++------------------------------------------------------+
+
+Optional external integrations:
+MES / PLM / Personnel / PLC-SCADA / Enterprise Data Platform
 #+END_SRC
 
-** 外部系统
+** 3.1 Actors
 
-| 系统 | 作用 |
-|-----+------|
-| 摄像头系统 | 视频采集 |
-| MES | 获取工艺任务 |
-| PLM | 获取标准流程 |
-| 人员系统 | 获取人员信息 |
-| 数据平台 | 数据分析 |
+| Actor | Responsibility |
+| Operator | 执行标准作业 |
+| Supervisor | 查看实时状态和 Session 结果 |
+| Reviewer | 复核自动违规和四路证据 |
+| Process Engineer | 管理规则, 标定, 模型和工位配置 |
+| Administrator | 部署, 安全, 数据库, 监控和恢复 |
 
-* 3. C4 Level 2: Container Diagram
+** 3.2 External Systems
+
+| System | Relationship |
+| Camera Network | RTSP 视频输入, 可选 NTP/PTP/RFC7273 时间基准 |
+| MES | 可选工单和工艺上下文 |
+| PLM/SOP | 可选标准流程和版本 |
+| Personnel | 可选人员身份和授权 |
+| PLC/SCADA | 可选设备状态事实 |
+| Monitoring | Prometheus, 运维告警 |
+| Enterprise Data Platform | 可选 Session 结果上送 |
+
+* 4. C4 Level 2: Container Diagram
+
+当前生产实现优先采用单 Edge Service, 而不是把每个视觉阶段拆成独立网络服务.
+
+这样做的原因:
+
+- 四路视频需要低延迟共享内存.
+- YOLO/RTMPose 模型需要跨 Session 常驻 GPU.
+- Edge 单工位的故障域和部署复杂度需要可控.
+- Python 组件边界已经保持清晰, 未来仍可按负载拆分.
 
 #+BEGIN_SRC text
-                 Web Dashboard
-                      |
-                      v
-+------------------------------------------------+
-| Video Pose AI Platform                         |
-|                                                |
-|  +-------------+      +-------------------+    |
-|  | Video       | ---> | AI Perception     |    |
-|  | Gateway     |      | Service           |    |
-|  +-------------+      +-------------------+    |
-|          |                     |               |
-|          v                     v               |
-|  Camera Manager        Pose Engine             |
-|                              |                 |
-|                              v                 |
-|                     Action Recognition         |
-|                              |                 |
-|                              v                 |
-|                     Rule Engine                |
-|                              |                 |
-|                              v                 |
-|                     Evaluation Service         |
-|                                                |
-+------------------------------------------------+
-
-                         |
-                         v
-                    Data Storage
+                           REST / WebSocket
+                     +--------------------------+
+                     | Web Console / API Client |
+                     +------------+-------------+
+                                  |
+                                  v
++-------------------- Edge Node ------------------------------------+
+|                                                                  |
+| +--------------------------------------------------------------+ |
+| | C01 Video Pose Edge Service                                 | |
+| | Python / FastAPI                                             | |
+| |                                                              | |
+| | Camera Hub -> Sync -> Perception -> Actions -> Rule Session  | |
+| |      |                                |                       | |
+| |      +-> Evidence Worker               +-> Quality Guard      | |
+| |                                       |                       | |
+| | Readiness / RBAC / Audit / Reconcile / Recovery / Metrics    | |
+| +----------+-------------------+----------------+---------------+ |
+|            |                   |                |                 |
+|            v                   v                v                 |
+| +----------------+   +----------------+  +--------------------+  |
+| | C02 PostgreSQL |   | C03 Audit FS   |  | C04 Evidence FS    |  |
+| | Query Store    |   | immutable      |  | JPEG + manifest    |  |
+| +----------------+   | JSON/JSONL      |  +--------------------+  |
+|                      +----------------+                          |
++------------------------------------------------------------------+
+       ^                    |
+       | RTSP               | Prometheus
+       |                    v
++------+---------+     +--------------------------+
+| 4 Cameras      |     | C05 Monitoring          |
++----------------+     | Prometheus/Grafana etc. |
+                       +--------------------------+
 #+END_SRC
 
-* 4. C4 Level 3: Component Design
+** 4.1 Container Catalog
 
-** Video Gateway
+| ID | Container | Current Technology | Responsibility |
+| C01 | Video Pose Edge Service | Python 3.11+, FastAPI, GStreamer, OpenCV, PyTorch ecosystem | 实时采集, 推理, 规则, Session, Evidence, Audit, API, Health |
+| C02 | PostgreSQL Query Store | PostgreSQL 16 | 可查询 Session, Actions, Violations, Steps, Reviews |
+| C03 | Immutable Audit Store | Local persistent filesystem | metadata.json, updates.jsonl, reviews.jsonl, final.json, recovery.json |
+| C04 | Evidence Store | Local persistent filesystem | 四路 JPEG Evidence, manifest, SHA-256, retention |
+| C05 | Monitoring | Prometheus compatible | Metrics, alerting, dashboards |
+| C06 | Web Console/API Client | Browser or external client | 实时状态, Session control, review, evidence |
 
-职责:
+** 4.2 Why PostgreSQL Is Secondary
 
-- RTSP/ONVIF摄像头连接
-- 视频流管理
-- 时间同步
-- 视频缓存
-
-技术:
-
-- FFmpeg
-- GStreamer
-- WebRTC
-
-** AI Perception Service
-
-负责基础视觉理解。
-
-组件:
-
-*** Person Detector
-
-技术:
-
-- YOLO
-
-输出:
-
-#+BEGIN_SRC json
-{
- "person_id": "001",
- "bbox": [100,200,300,500],
- "confidence":0.98
-}
-#+END_SRC
-
-*** Pose Estimation
-
-输出人体关键点。
-
-推荐:
-
-- RTMPose
-- MediaPipe Pose
-
-*** Object Detection
-
-识别:
-
-- 工具
-- 零件
-- 设备
-
-** Pose Engine
-
-负责:
-
-- 多摄像头融合
-- 2D到3D姿态转换
-- 时间序列平滑
-
-算法:
-
-- VideoPose3D
-- Transformer Pose Model
-
-输入:
+C02 不是唯一事实源.
 
 #+BEGIN_SRC text
-Camera Frames
-    |
-2D Keypoints
-    |
-3D Skeleton
+Immutable Audit
+     |
+     +--> Query Store
+     |
+     +--> Reindex / Reconcile
+     |
+     +--> Disaster Recovery
 #+END_SRC
 
-** Action Recognition Service
+数据库临时不可用时, 当前 Session 仍可以继续依赖 C03 保存事实. 恢复后通过 Audit -> SQL reconciliation 修复查询层.
 
-负责动作理解。
-
-例如:
+* 5. C4 Level 3: C01 Edge Service Components
 
 #+BEGIN_SRC text
-Pick Tool
-    |
-Move Tool
-    |
-Install Part
-    |
-Check Result
++------------------------------------------------------------------+
+| C01 Video Pose Edge Service                                     |
+|                                                                  |
+| CP01 Capture Adapters                                            |
+|   OpenCV / OpenCV-GStreamer / Native GstAppSink                  |
+|             |                                                    |
+|             v                                                    |
+| CP02 PersistentCameraHub                                         |
+|   reconnect / camera health / MemoryFrameStore                   |
+|             |                                                    |
+|             v                                                    |
+| CP03 LiveFrameSynchronizer                                       |
+|   four-view match / skew / offset / drift                        |
+|             |                                                    |
+|       +-----+----------------------+                             |
+|       |                            |                             |
+|       v                            v                             |
+| CP04 PersistentModelPool       CP10 AsyncEvidenceRecorder        |
+| YOLO / RTMPose                 JPEG ring / pre-post roll         |
+|       |                            |                             |
+|       v                            v                             |
+| CP05 Perception Pipeline       CP11 EvidenceRetention            |
+| detect/track/pose/geometry     SHA256 / review status            |
+|       |                                                          |
+|       v                                                          |
+| CP06 Action Engine                                                |
+| ActionEvent / relations / zones                                  |
+|       |                                                          |
+|       v                                                          |
+| CP07 RealtimeRuleSession                                         |
+| deterministic SOP rules / score / violations                     |
+|       ^                                                          |
+|       |                                                          |
+| CP08 SessionQualityMonitor                                       |
+| camera/sync/processing/evidence/audit -> SYSTEM_QUALITY          |
+|       |                                                          |
+|       v                                                          |
+| CP09 PersistentLiveSessionController                             |
+| lifecycle / audit / SQL / review / recovery                      |
+|       |                                                          |
+|       +--> CP12 SessionAuditWriter                               |
+|       +--> CP13 ResilientSessionStore                            |
+|       +--> CP14 Reconciliation / Crash Recovery                  |
+|       +--> CP15 Readiness Evaluator                              |
+|       +--> CP16 FastAPI/RBAC/WebSocket/Prometheus                |
++------------------------------------------------------------------+
 #+END_SRC
 
-技术:
+* 6. Capture and Timestamp Architecture
 
-- Video Transformer
-- SlowFast
-- Temporal CNN
+** 6.1 Capture Backends
 
-** Rule Engine
+| Backend | Purpose |
+| opencv | 开发和兼容模式 |
+| gstreamer-opencv | 显式 GStreamer pipeline, OpenCV 读取 |
+| gstreamer-native | GstAppSink 原生读取, 可使用 PTS/RFC7273 reference timestamp |
 
-工业场景不直接依赖AI判断。
-
-采用:
-
-AI识别 + 工艺规则。
-
-规则模型:
-
-#+BEGIN_SRC json
-{
- "operation":"assembly",
- "steps":[
-  {
-   "action":"pick",
-   "object":"screwdriver"
-  },
-  {
-   "action":"install"
-  }
- ]
-}
-#+END_SRC
-
-** Evaluation Service
-
-输出:
-
-- 操作评分
-- 异常类型
-- 视频片段
-- 改进建议
-
-* 5. 数据模型设计
-
-** Action Session
+** 6.2 Timestamp Sources
 
 #+BEGIN_SRC text
-ActionSession
+arrival
+  local monotonic arrival time
+
+pts
+  GstBuffer PTS, rebased to a monotonic process timeline
+
+reference
+  GstReferenceTimestampMeta, intended for shared RFC7273/NTP/PTP reference
+#+END_SRC
+
+重要约束:
+
+- PTS 不等于绝对源时钟.
+- reference 模式缺少 ReferenceTimestampMeta 时直接失败.
+- 系统不允许在同一路流中静默混用时间基准.
+- Camera Health 的 freshness 始终使用本机 monotonic arrival time.
+- Multi-view Synchronizer 使用 source timestamp + configured clock_offset_ms.
+- Session metadata 固化 capture_backend 和 timestamp_source.
+
+* 7. Four-view Synchronization
+
+#+BEGIN_SRC text
+FRONT reference frame
+       |
+       +--> nearest REAR
+       +--> nearest LEFT
+       +--> nearest RIGHT
+       |
+       v
+sync tolerance check
+       |
+       v
+SynchronizedFrameSet
+#+END_SRC
+
+当前同步健康记录:
+
+- reference_frames_total.
+- emitted_total.
+- miss_total.
+- missing_buffer_total.
+- tolerance_miss_total.
+- stale_reference_total.
+- success_ratio.
+- last/max/P95/P99 skew.
+- signed camera offsets.
+- camera drift ms/min.
+
+时钟漂移采用最近样本的线性趋势估计.
+
+固定 offset 和持续 drift 被区分处理.
+
+* 8. Persistent Runtime Model
+
+摄像头和重模型的生命周期长于 Session.
+
+#+BEGIN_SRC text
+Edge process
  |
- +-- operator
- +-- workstation
- +-- task
- +-- start_time
- +-- score
+ +-- PersistentCameraHub -----------------------------+
+ |                                                   |
+ +-- PersistentModelPool                             |
+ |    YOLO / Pose                                    |
+ |                                                   |
+ +--> Session A                                      |
+ |      SessionAnalysisRuntime                       |
+ |      RealtimeRuleSession                          |
+ |                                                   |
+ +--> Session B                                      |
+ |      fresh rule/action state                      |
+ |                                                   |
+ +--> Session C                                      |
+        fresh rule/action state
 #+END_SRC
 
-** Pose Sequence
+收益:
 
-保存:
+- Session 开始不重新建立 4 路 RTSP.
+- Session 开始不重新加载 YOLO/RTMPose.
+- Rule/Action state 每个 Session 重新创建, 避免跨 Session 串扰.
+- Managed Soak 可以主动反复 start/stop Session 验证状态隔离.
 
-- 时间戳
-- 关键点
-- 三维坐标
-
-** Violation Record
+* 9. Perception and Action Pipeline
 
 #+BEGIN_SRC text
-Violation
- |
- +-- type
- +-- confidence
- +-- frame
- +-- video_clip
+SynchronizedFrameSet
+       |
+       v
+Person/Object Detection
+       |
+       v
+Tracking / Multi-view Identity
+       |
+       +--> 2D Pose
+       |
+       +--> Planar World Projection
+       |
+       +--> optional 3D Triangulation
+       |
+       v
+Human/Object/Zone Relations
+       |
+       v
+Industrial Action Engine
+       |
+       v
+ActionEvent
 #+END_SRC
 
-* 6. 四摄像头空间模型
+ActionEvent 是规则引擎与视觉模型之间的稳定边界.
 
-摄像头布局:
+规则层不依赖模型内部 Tensor 或框架对象.
+
+* 10. Rule and Evaluation Architecture
+
+** 10.1 Deterministic Rule Session
+
+Realtime 和 Replay 共用同一 RuleEngine.
+
+主要违规:
+
+- ORDER.
+- MISSING.
+- TEMPORAL.
+- TIMEOUT.
+- wrong tool/object.
+- wrong source/target zone.
+- spatial violations.
+- SYSTEM_QUALITY.
+
+** 10.2 Pass/Fail
+
+MAJOR 或 CRITICAL violation 会让 Session =passed=false=.
+
+Score 由规则严重度 penalty 计算.
+
+系统质量失效不能被解释为"没有违规".
+
+* 11. In-session Quality Guard
+
+Session Start 健康不代表整个 Session 永远健康.
+
+运行中持续监测:
+
+- camera state and freshness.
+- sync stall/miss/skew/drift.
+- processing error delta.
+- processing FrameSet drop ratio.
+- Evidence Worker error delta.
+- Evidence Worker drop ratio.
+- Evidence over-capacity.
+- immutable Audit write health.
+
+持续故障经过 grace 后生成:
 
 #+BEGIN_SRC text
-              Rear Camera
-                   |
-                   |
-Left Camera -- Work Area -- Right Camera
-                   |
-                   |
-             Front Camera
+step     = SYSTEM
+type     = SYSTEM_QUALITY
+severity = CRITICAL
 #+END_SRC
 
-处理流程:
+典型 Rule ID:
 
 #+BEGIN_SRC text
-Camera Calibration
-        |
-Coordinate Transformation
-        |
-3D World Space
-        |
-Human Skeleton
+SYSTEM-QUALITY-CAMERA-CAM-FRONT
+SYSTEM-QUALITY-SYNC
+SYSTEM-QUALITY-PROCESSING
+SYSTEM-QUALITY-EVIDENCE
+SYSTEM-QUALITY-AUDIT
+SYSTEM-QUALITY-RECOVERY
 #+END_SRC
 
-* 7. 部署架构
+故障恢复后 Monitor 重新武装. 后续再次发生会形成新的 incident.
 
-** Edge Node
+* 12. Evidence Architecture
 
-运行:
+#+BEGIN_SRC text
+Live FrameSet
+   |
+   | bounded async queue
+   v
+JPEG Evidence Worker
+   |
+compressed rolling buffer
+   |
+Violation trigger
+   |
+pre-roll + post-roll
+   |
++-----------------------+
+| evidence/session/id   |
+|  manifest.json        |
+|  front/*.jpg          |
+|  rear/*.jpg           |
+|  left/*.jpg           |
+|  right/*.jpg          |
++-----------------------+
+#+END_SRC
 
-- Video Gateway
-- AI Inference
-- Rule Engine
+Evidence manifest 包含:
 
-推荐硬件:
+- stable evidence id.
+- session/rule/step/event identity.
+- normalized time window.
+- camera list.
+- every JPEG SHA-256.
+- COMPLETE/PARTIAL.
+- human review status.
 
-- NVIDIA Jetson Orin
-- Industrial PC + RTX GPU
+默认生产策略:
 
-** Cloud Platform
+- pre-roll 3 s.
+- post-roll 3 s.
+- 约 5 FPS evidence sampling.
+- JPEG quality 70.
+- async worker queue.
+- unreviewed evidence 自动保护.
+- retention + max storage quota.
 
-负责:
+Evidence API 由 =evidence:read= 权限保护.
 
-- 模型管理
-- 数据分析
-- 报表
-- 模型训练
+* 13. Human Review
 
-* 8. MVP开发计划
+#+BEGIN_SRC text
+Automatic Violation
+       |
+       +--> SQL violation record
+       |
+       +--> Evidence package
+       |
+       v
+Pending Review
+       |
+       +--> CONFIRMED
+       |
+       +--> DISMISSED
+#+END_SRC
 
-** Phase 1
+人工复核不覆盖原始自动判定字段.
 
-目标:
+追加字段:
 
-单人, 四摄像头, 单流程检测。
+- review_status.
+- reviewed_by.
+- reviewed_at.
+- reason.
+- comment.
 
-功能:
+Review 同时写 reviews.jsonl, SQL 和 Evidence manifest.
 
-- 视频采集
-- 人体检测
-- 姿态识别
-- 五步骤动作判断
-- 自动评分
+* 14. Immutable Audit
 
-** Phase 2
+每个 Session 目录:
 
-增加:
+#+BEGIN_SRC text
+session-id/
+  metadata.json
+  updates.jsonl
+  reviews.jsonl
+  final.json
+  recovery.json        optional
+#+END_SRC
 
-- 多人员
-- 复杂动作
-- 工具识别
-- 3D空间分析
+metadata 固化:
 
-** Phase 3
+- operator/workstation/operation.
+- rule version.
+- model/config paths.
+- capture backend.
+- timestamp source.
+- sync tolerance.
+- camera clock offsets.
+- SHA-256 for runtime config, manifest, rules, zones, calibration and validation control points.
 
-增加:
+Audit Writer 有独立健康:
 
-- AI操作助手
-- 自动培训反馈
-- 工艺优化建议
+#+BEGIN_SRC text
+READY
+DEGRADED
+write_errors_total
+last_error
+last_success_at
+#+END_SRC
 
-* 9. 测试方案
+Audit 写失败会生成 SYSTEM_QUALITY-AUDIT, 不允许 Session 继续保持可信 PASS.
 
-** Accuracy Test
+* 15. PostgreSQL Query Store
 
-指标:
+SQL 主要实体:
 
-| 项目 | 目标 |
-|-----+------|
-| Person Detection | >95% |
-| Pose Accuracy | >90% |
-| Action Recognition | >90% |
+#+BEGIN_SRC text
+vp_sessions
+vp_actions
+vp_violations
+vp_steps
+#+END_SRC
 
-** Performance Test
+Violation 使用稳定身份:
 
-目标:
+#+BEGIN_SRC text
+session_id + rule_id + step_code + event_id
+#+END_SRC
 
-- 四路1080P实时分析
-- 延迟 <200ms
-- FPS >=25
+PostgreSQL 用于:
 
-** Industrial Scenario Test
+- 搜索和列表.
+- Session 查询.
+- review workflow.
+- dashboard/report.
+
+它不是唯一灾难恢复事实源.
+
+* 16. Persistence Resilience
+
+** 16.1 Connectivity Health
+
+#+BEGIN_SRC text
+READY
+DEGRADED
+#+END_SRC
+
+累计保留 read/write error counters.
+
+连接恢复后 probe 可以重新变为 READY.
+
+** 16.2 Reconciliation Health
+
+#+BEGIN_SRC text
+NEVER
+READY
+DIRTY
+RUNNING
+DEGRADED
+#+END_SRC
+
+连接 READY 不等于历史数据完整.
+
+任意 SQL write failure 会把 reconciliation 标成 DIRTY.
+
+只有 Audit -> SQL 对账成功并且不存在未完成 Audit Session 时才能回 READY.
+
+* 17. Audit -> SQL Reconciliation
+
+对 finalized Session 比较:
+
+- Action event_id set.
+- Violation stable identity set.
+- Step code set.
+- Review state.
+- final status.
+- final score.
+- final passed.
+
+不一致时:
+
+#+BEGIN_SRC text
+delete SQL Session
+      |
+replay metadata
+      |
+replay updates
+      |
+replay final
+      |
+replay reviews
+      |
+verify again
+#+END_SRC
+
+该过程是幂等的.
+
+一致 Session 直接 SKIPPED.
+
+* 18. Crash Recovery
+
+进程/主机在 Session 中途崩溃时:
+
+#+BEGIN_SRC text
+metadata.json exists
+updates.jsonl exists
+final.json missing
+#+END_SRC
+
+这类 Session 不能被静默删除或当成 COMPLETED.
+
+受控恢复:
+
+- 保留已知 Step 状态.
+- 保留已知 Violation.
+- 写 recovery.json.
+- 追加 CRITICAL SYSTEM-QUALITY-RECOVERY.
+- score = 0.
+- passed = false.
+- final status = ABORTED.
+- 再执行 Audit -> SQL reconciliation.
+
+* 19. Session Start Readiness Gate
+
+正式 Session 启动前, 生产模板检查:
+
+- PersistentCameraHub running.
+- PersistentModelPool loaded.
+- enabled cameras ONLINE.
+- sync warmup samples.
+- sync miss ratio.
+- P99 skew.
+- clock drift.
+- Evidence capacity.
+- Evidence worker errors.
+- Audit probe.
+- PostgreSQL connectivity.
+- reconciliation READY.
+- filesystem free ratio and free GB.
+- runtime assets exist.
+- optional calibration health.
+
+Readiness 失败返回结构化检查项.
+
+#+BEGIN_SRC text
+GET /health/live
+GET /health/ready
+GET /api/v1/sessions/readiness
+#+END_SRC
+
+Liveness 与 Session readiness 被明确分离.
+
+* 20. Calibration Health
+
+如果现场启用 3D, 可配置独立 Validation Control Points.
+
+#+BEGIN_SRC text
+Perspective Calibration
+       +
+Independent Control Points
+       |
+       v
+Reprojection RMSE by camera
+       |
+       v
+Doctor + Readiness Gate
+#+END_SRC
+
+控制点不能与拟合标定矩阵完全使用同一组点, 否则无法验证真实外部误差.
+
+* 21. API and Security
+
+主要 API:
+
+#+BEGIN_SRC text
+GET  /health/live
+GET  /health/ready
+
+GET  /api/v1/runtime/health
+GET  /api/v1/runtime/latest
+GET  /api/v1/runtime/persistence
+POST /api/v1/runtime/persistence/reconcile
+GET  /api/v1/runtime/persistence/incomplete-sessions
+POST /api/v1/runtime/persistence/incomplete-sessions/{id}/recover
+
+GET  /api/v1/cameras
+GET  /api/v1/cameras/{id}/snapshot.jpg
+
+GET  /api/v1/sessions/readiness
+POST /api/v1/sessions
+GET  /api/v1/sessions
+GET  /api/v1/sessions/current
+GET  /api/v1/sessions/current/evaluation
+POST /api/v1/sessions/{id}/stop
+POST /api/v1/sessions/{id}/abort
+
+GET  /api/v1/sessions/{id}/evidence
+POST /api/v1/sessions/{id}/violations/{violation_id}/review
+
+WS   /api/v1/realtime
+GET  /metrics
+#+END_SRC
+
+Security:
+
+- opaque Bearer token.
+- server stores SHA-256 token digest.
+- RBAC.
+- business/evidence/review/metrics permissions separated.
+- health probes intentionally unauthenticated.
+- production expects TLS reverse proxy.
+- RTSP URI 不通过 Camera catalog 暴露.
+
+* 22. Roles and Permissions
+
+主要角色:
+
+- ADMIN.
+- ENGINEER.
+- SUPERVISOR.
+- REVIEWER.
+- OPERATOR.
+- AUDITOR.
+
+权限示例:
+
+#+BEGIN_SRC text
+runtime:read
+camera:read
+session:read
+session:start
+session:control
+evidence:read
+violation:review
+persistence:read
+persistence:repair
+metrics:read
+realtime:read
+#+END_SRC
+
+恢复和数据修复属于 mutation 权限, 默认仅 ADMIN/ENGINEER.
+
+* 23. Observability
+
+Prometheus 指标覆盖:
+
+** Cameras
+
+- frames.
+- read errors.
+- reconnects.
+- FPS.
+- online.
+
+** Sync
+
+- emitted/miss.
+- missing buffer/tolerance/stale reference.
+- skew P95/P99.
+- camera offsets.
+- drift ms/min.
+
+** Processing
+
+- received/processed/dropped.
+- queue depth.
+- processing errors.
+- latency/max/P95/P99.
+- RSS/GPU memory.
+
+** Evidence
+
+- queue.
+- dropped/errors.
+- artifact count.
+- protected count.
+- storage bytes.
+- over capacity.
+
+** Audit
+
+- audit_ready.
+- audit_write_errors_total.
+
+** Filesystem
+
+- total/used/free bytes.
+- free ratio.
+
+* 24. Soak and Fault Verification
+
+** 24.1 Managed Soak
+
+生产同构长稳测试:
+
+#+BEGIN_SRC text
+Persistent Camera Hub
+Persistent Model Pool
+         |
+         +-- Session 1
+         +-- Session 2
+         +-- Session 3
+         ...
+#+END_SRC
 
 覆盖:
 
-- 遮挡
-- 光照变化
-- 手套
-- 防护服
-- 快速动作
+- RSS/GPU growth.
+- processing P99.
+- camera reconnect.
+- sync quality/drift.
+- Evidence.
+- Audit.
+- storage.
+- Session start/stop latency.
+- Session state isolation.
 
-* 10. 后续演进方向
+** 24.2 Deterministic Fault Scenarios
 
-Video Pose系统最终演进为工业AI Operator平台:
+当前 CI 主动注入:
+
+- camera outage/recovery.
+- sync stall.
+- sync drift.
+- processing error.
+- processing drop.
+- Evidence pressure.
+- Audit write failure.
+
+目标是验证故障语义, 不替代真实硬件 HIL 测试.
+
+* 25. C4 Deployment
 
 #+BEGIN_SRC text
-Video
- |
-Pose
- |
-Action
- |
-Process
- |
-Quality
- |
-AI Assistant
++---------------- Edge Industrial PC ------------------+
+|                                                     |
+| Docker Compose                                      |
+|                                                     |
+| +-----------------+       +----------------------+  |
+| | video-pose edge |------>| PostgreSQL           |  |
+| | GPU optional    |       | query store          |  |
+| +-------+---------+       +----------------------+  |
+|         |                                            |
+|         +--> audit volume                            |
+|         +--> evidence volume                         |
+|         +--> cache volume                            |
++---------+--------------------------------------------+
+          |
+          +--> Camera VLAN, 4 x RTSP
+          |
+          +--> TLS reverse proxy / LAN clients
 #+END_SRC
+
+容器策略:
+
+- non-root.
+- read-only root filesystem.
+- drop ALL Linux capabilities.
+- no-new-privileges.
+- bounded tmpfs.
+- runtime config read-only.
+- model directory read-only.
+- audit/evidence/cache persistent volumes.
+- PostgreSQL 不暴露宿主端口.
+- HTTP 默认 bind 127.0.0.1.
+
+启动链:
+
+#+BEGIN_SRC text
+Alembic migration
+      |
+Doctor
+      |
+Serve + startup reconciliation
+      |
+Readiness warmup
+#+END_SRC
+
+* 26. Architecture Decisions
+
+** ADR-001: Rules Own Compliance Decision
+
+视觉模型输出事实, 规则决定业务结论.
+
+** ADR-002: Replay and Realtime Share Rule Semantics
+
+Replay 与实时使用同一 RuleEngine, 以确保规则可回归.
+
+** ADR-003: Current Edge Uses One Process with Logical Components
+
+当前单工位不强制微服务拆分. 优先共享内存, GPU 模型复用和低运维复杂度.
+
+** ADR-004: Persistent Cameras and Models, Session-scoped State
+
+RTSP 和重模型常驻. Action/Rule Session 状态每次重建.
+
+** ADR-005: Explicit Timestamp Semantics
+
+arrival, PTS, reference 不混用. 时间基准进入 Audit fingerprint.
+
+** ADR-006: Evidence First
+
+每个违规必须能够回到多视角证据.
+
+** ADR-007: Immutable Audit Is Recovery Source
+
+PostgreSQL 可从 Audit 重建.
+
+** ADR-008: Query Store Connectivity and Completeness Are Separate
+
+READY connectivity 不能代表 reconciliation READY.
+
+** ADR-009: Observability Failure Invalidates Compliance
+
+持续 camera/sync/processing/evidence/audit 故障形成 SYSTEM_QUALITY.
+
+** ADR-010: Formal Session Requires Readiness Gate
+
+进程存活不等于可以开始正式考核.
+
+** ADR-011: Crash Recovery Is Explicit ABORTED
+
+缺失 final.json 的 Session 不能自动推断为 COMPLETED.
+
+* 27. Current Boundary vs Future Platform
+
+当前已实现重点是单 Edge Node 的可靠业务闭环.
+
+未来中心平台可以增加:
+
+- 多 Edge 设备注册.
+- 配置和规则集中发布.
+- 模型制品仓库.
+- 企业级报表.
+- Evidence 长期对象存储.
+- Edge outbox/sync.
+- SSO/IdP.
+- OpenTelemetry aggregation.
+- multi-site operations.
+
+这些能力不应反过来增加单工位实时链路的硬依赖.
+
+* 28. Source of Truth
+
+代码与设计的一致性顺序:
+
+#+BEGIN_SRC text
+runtime contracts/tests
+      |
+C4 architecture
+      |
+component detailed docs
+      |
+deployment/test plans
+#+END_SRC
+
+涉及 Container 边界, Session 状态, timestamp semantics, Rule contract, Audit schema, External API, Readiness, Evidence 或 Recovery 的变更, 应同步更新本文和设计索引.

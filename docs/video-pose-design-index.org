@@ -1,184 +1,237 @@
 #+TITLE: Video Pose Design Documentation Index
-#+SUBTITLE: C4 Model 与详细设计文档索引
+#+SUBTITLE: C4 Model, Runtime, Reliability and Verification Documentation
 #+AUTHOR: RedCreationTech
-#+DATE: 2026-09-20
-#+OPTIONS: toc:2 num:t
+#+DATE: 2026-09-21
+#+OPTIONS: toc:3 num:t
 
-* 1. 文档地图
-
-Video Pose 是一个多视角视频驱动的人员动作规范检测平台.
-
-设计文档采用 C4 Model 自顶向下组织.
+* 1. 当前基线
 
 #+BEGIN_SRC text
-C4 Level 1
-System Context
-  |
-  v
-C4 Level 2
-Containers
-  |
-  v
-C4 Level 3
-Components
-  |
-  +--> Action Domain Model
-  +--> Rule Engine
-  +--> Data Model
-  +--> API Contract
-  +--> Deployment
-  +--> Verification
-  +--> MVP Plan
+Video Pose 0.41
 #+END_SRC
 
-* 2. 文档清单
-
-| 文档 | 作用 |
-| [[file:video-pose-system-architecture.org][video-pose-system-architecture.org]] | C4 L1-L3 总体架构 |
-| [[file:video-pose-action-model.org][video-pose-action-model.org]] | 动作语义, 多视角证据, SOP 状态模型 |
-| [[file:video-pose-rule-engine-design.org][video-pose-rule-engine-design.org]] | 规则 DSL, CEP, 状态机, 可解释判定 |
-| [[file:video-pose-database-design.org][video-pose-database-design.org]] | PostgreSQL, Redis, MinIO, 事件与数据生命周期 |
-| [[file:video-pose-api-design.org][video-pose-api-design.org]] | REST, WebSocket, gRPC, Event Contract |
-| [[file:video-pose-deployment-design.org][video-pose-deployment-design.org]] | C4 Deployment, Edge GPU, Camera Pipeline |
-| [[file:video-pose-test-plan.org][video-pose-test-plan.org]] | 模型, 规则, E2E, 性能和现场验收 |
-| [[file:video-pose-mvp-development-plan.org][video-pose-mvp-development-plan.org]] | Sprint, DoD, 数据采集和开发里程碑 |
-
-* 3. C4 System Context
-
-参与者:
-
-- Operator.
-- Supervisor.
-- Process Engineer.
-- Reviewer.
-- System Administrator.
-
-外部系统:
-
-- Camera/ONVIF.
-- MES.
-- PLM/SOP.
-- Personnel System.
-- PLC/SCADA optional.
-- Enterprise Data Platform.
-
-核心系统:
+当前产品已经从早期概念原型演进为:
 
 #+BEGIN_SRC text
-Video Pose AI Platform
+4-camera persistent Edge Runtime
+  + explicit timestamp/sync
+  + persistent model pool
+  + session-scoped inference/rules
+  + readiness + quality guard
+  + evidence + human review
+  + immutable audit
+  + SQL query store
+  + reconciliation + crash recovery
+  + production Docker/Compose
+  + managed soak + fault injection
 #+END_SRC
 
-* 4. C4 Container Catalog
-
-| ID | Container | 职责 |
-| C01 | Video Gateway | 四路视频接入, 时间戳, 缓存, 录像 |
-| C02 | Perception Service | 人, 工具, 工件, 关键点检测 |
-| C03 | Pose Fusion Service | 多视角关联, 2D/3D 空间融合 |
-| C04 | Action Recognition Service | 时间序列动作识别 |
-| C05 | Rule Engine | SOP, 时间, 顺序, 空间和安全规则 |
-| C06 | Evaluation Service | 评分, 结果, 报告 |
-| C07 | API & Control Service | 会话和系统管理 API |
-| C08 | Web Console | 实时监控, 配置和复盘 |
-| C09 | Data Storage | PostgreSQL, Redis, MinIO |
-| C10 | Model/Config Service | 模型和配置版本管理 |
-
-* 5. 核心实时链路
+* 2. C4 Documentation Map
 
 #+BEGIN_SRC text
-Cameras
-  |
-  v
-C01 Video Gateway
-  |
-  v
-C02 Perception
-  |
-  v
-C03 Pose Fusion
-  |
-  v
-C04 Action Recognition
-  |
-  v
-C05 Rule Engine
-  |
-  v
-C06 Evaluation
-  |
-  +----> C08 Web Console
-  |
-  +----> C09 Storage
+C4 L1 System Context
+        |
+        v
+C4 L2 Deployable Containers
+        |
+        v
+C4 L3 Edge Components
+        |
+        +--> Capture / Sync / Geometry
+        +--> Perception / Actions
+        +--> Rule Session / Quality Guard
+        +--> Evidence / Review
+        +--> Audit / SQL / Recovery
+        +--> API / Security / Observability
+        |
+        v
+Deployment + Verification + Field Acceptance
 #+END_SRC
 
-* 6. 最重要的架构决策
+* 3. Core Architecture Documents
 
-** ADR-001: AI 不直接负责最终合规结论
+| Document | Purpose |
+| [[file:video-pose-system-architecture.org][video-pose-system-architecture.org]] | 当前 C4 L1-L3 总体架构和关键 ADR |
+| [[file:video-pose-deployment-design.org][video-pose-deployment-design.org]] | C4 Deployment, Edge GPU, Camera VLAN, operations |
+| [[file:video-pose-edge-container-deployment.org][video-pose-edge-container-deployment.org]] | Docker/Compose, hardening, startup gate |
+| [[file:video-pose-api-design.org][video-pose-api-design.org]] | API contract baseline |
+| [[file:video-pose-database-design.org][video-pose-database-design.org]] | Query store/data model baseline |
+| [[file:video-pose-test-plan.org][video-pose-test-plan.org]] | Verification, field acceptance, Go/No-Go |
 
-AI 输出事实和动作概率. 合规由版本化规则判断.
+* 4. Camera, Time and Geometry
 
-** ADR-002: 多视角使用统一时间和世界坐标
+| Document | Purpose |
+| [[file:video-pose-live-gateway.org][video-pose-live-gateway.org]] | live capture gateway |
+| [[file:video-pose-gstreamer-gateway.org][video-pose-gstreamer-gateway.org]] | OpenCV/GStreamer pipeline |
+| [[file:video-pose-native-gstreamer.org][video-pose-native-gstreamer.org]] | native GstAppSink, PTS, RFC7273 |
+| [[file:video-pose-sync-health.org][video-pose-sync-health.org]] | four-camera sync health |
+| [[file:video-pose-clock-drift.org][video-pose-clock-drift.org]] | camera offset trend/drift |
+| [[file:video-pose-camera-calibration.org][video-pose-camera-calibration.org]] | camera calibration design |
+| [[file:video-pose-calibration-health-gate.org][video-pose-calibration-health-gate.org]] | independent control points and RMSE Gate |
+| [[file:video-pose-multiview-geometry.org][video-pose-multiview-geometry.org]] | planar/world geometry |
+| [[file:video-pose-3d-triangulation.org][video-pose-3d-triangulation.org]] | perspective triangulation |
 
-四路摄像头不是四个独立结果面板. 它们需要形成同一个 Session 的多视角证据.
+* 5. Perception, Action and Rules
 
-** ADR-003: UNKNOWN 是合法业务状态
+| Document | Purpose |
+| [[file:video-pose-perception-v1.org][video-pose-perception-v1.org]] | detector/pose adapter design |
+| [[file:video-pose-action-model.org][video-pose-action-model.org]] | ActionEvent domain model |
+| [[file:video-pose-industrial-actions.org][video-pose-industrial-actions.org]] | industrial action atoms and relations |
+| [[file:video-pose-rule-engine-design.org][video-pose-rule-engine-design.org]] | deterministic Rule DSL and semantics |
+| [[file:video-pose-realtime-rule-session.org][video-pose-realtime-rule-session.org]] | realtime facade over replay RuleEngine |
+| [[file:video-pose-debug-overlay.org][video-pose-debug-overlay.org]] | explainability/debug overlay |
 
-不可见和低置信度不等于合规, 也不等于违规.
+* 6. Persistent Runtime and Session Lifecycle
 
-** ADR-004: 原始视频和业务数据分层存储
+| Document | Purpose |
+| [[file:video-pose-persistent-camera-hub.org][video-pose-persistent-camera-hub.org]] | RTSP connections across Sessions |
+| [[file:video-pose-persistent-model-pool.org][video-pose-persistent-model-pool.org]] | YOLO/RTMPose reuse across Sessions |
+| [[file:video-pose-session-lifecycle.org][video-pose-session-lifecycle.org]] | start/stop/abort semantics |
+| [[file:video-pose-session-readiness.org][video-pose-session-readiness.org]] | formal Session Start Gate |
+| [[file:video-pose-in-session-quality-guard.org][video-pose-in-session-quality-guard.org]] | SYSTEM_QUALITY semantics |
+| [[file:video-pose-processing-evidence-quality.org][video-pose-processing-evidence-quality.org]] | processing/Evidence quality |
+| [[file:video-pose-session-runtime-fingerprint.org][video-pose-session-runtime-fingerprint.org]] | timestamp/config/rules/calibration SHA-256 |
 
-关系数据库不保存全部视频帧和高频 Pose.
+* 7. Evidence and Review
 
-** ADR-005: Evidence First
+| Document | Purpose |
+| [[file:video-pose-evidence-design.org][video-pose-evidence-design.org]] | evidence domain design |
+| [[file:video-pose-live-evidence.org][video-pose-live-evidence.org]] | live pre/post roll evidence |
+| [[file:video-pose-async-evidence.org][video-pose-async-evidence.org]] | async Evidence Worker |
+| [[file:video-pose-evidence-api.org][video-pose-evidence-api.org]] | protected Evidence APIs |
+| [[file:video-pose-evidence-retention.org][video-pose-evidence-retention.org]] | review-aware retention |
+| [[file:video-pose-evidence-observability.org][video-pose-evidence-observability.org]] | queue/storage metrics |
+| [[file:video-pose-violation-review.org][video-pose-violation-review.org]] | human confirm/dismiss workflow |
 
-所有违规必须可以回到视频证据和规则 trace.
+* 8. Audit, Persistence and Recovery
 
-** ADR-006: Replay First
+| Document | Purpose |
+| [[file:video-pose-audit-durability.org][video-pose-audit-durability.org]] | immutable Audit health and failure semantics |
+| [[file:video-pose-session-repository.org][video-pose-session-repository.org]] | SQL query repository |
+| [[file:video-pose-database-resilience.org][video-pose-database-resilience.org]] | secondary DB degradation |
+| [[file:video-pose-persistence-recovery.org][video-pose-persistence-recovery.org]] | connectivity DEGRADED -> READY |
+| [[file:video-pose-persistence-reconcile.org][video-pose-persistence-reconcile.org]] | Audit -> SQL consistency repair |
+| [[file:video-pose-persistence-reconciliation-health.org][video-pose-persistence-reconciliation-health.org]] | connectivity vs completeness state |
+| [[file:video-pose-incomplete-session-recovery.org][video-pose-incomplete-session-recovery.org]] | crash Session -> ABORTED recovery |
+| [[file:video-pose-storage-health.org][video-pose-storage-health.org]] | real filesystem watermarks |
 
-同一批录像必须能够脱离现场摄像头重复跑完整 pipeline, 作为持续回归基础.
+* 9. API, Security and Monitoring
 
-* 7. 开发阅读顺序
+| Document | Purpose |
+| [[file:video-pose-live-api.org][video-pose-live-api.org]] | FastAPI/WebSocket live API |
+| [[file:video-pose-monitoring-data-api.org][video-pose-monitoring-data-api.org]] | monitoring/query APIs |
+| [[file:video-pose-security.org][video-pose-security.org]] | Bearer token and RBAC |
+| [[file:video-pose-resource-monitoring.org][video-pose-resource-monitoring.org]] | RSS/GPU/P95/P99 |
+| [[file:video-pose-storage-health.org][video-pose-storage-health.org]] | storage metrics/readiness |
+| [[file:video-pose-sync-health.org][video-pose-sync-health.org]] | sync Prometheus metrics |
 
-首次进入项目建议:
+* 10. Verification and Reliability
+
+| Document | Purpose |
+| [[file:video-pose-test-plan.org][video-pose-test-plan.org]] | full V&V and field acceptance |
+| [[file:video-pose-soak-test.org][video-pose-soak-test.org]] | basic soak |
+| [[file:video-pose-managed-soak.org][video-pose-managed-soak.org]] | production-shaped 72h Session rotation |
+| [[file:video-pose-fault-injection.org][video-pose-fault-injection.org]] | deterministic resilience scenarios |
+| [[file:video-pose-field-poc.org][video-pose-field-poc.org]] | field PoC workflow |
+| [[file:video-pose-mvp-development-plan.org][video-pose-mvp-development-plan.org]] | historical implementation roadmap |
+
+* 11. Current Physical Container Catalog
+
+| ID | Container | Responsibility |
+| C01 | Video Pose Edge Service | Capture, sync, inference, action, rules, quality, evidence, audit, API |
+| C02 | PostgreSQL Query Store | Queryable Session/Action/Violation/Review data |
+| C03 | Immutable Audit Volume | Disaster recovery fact source |
+| C04 | Evidence Volume | Multi-view evidence and manifests |
+| C05 | Monitoring | Prometheus compatible metrics |
+| C06 | Client/Web Console | Session operations and review |
+
+注意:
+
+早期设计中的 Video Gateway, Perception Service, Pose Fusion, Action Recognition, Rule Engine 等仍然是重要逻辑组件, 但当前单工位生产实现将它们作为 C01 内部 Component 部署, 而不是独立进程.
+
+* 12. Architecture Decisions
+
+** ADR-001: AI facts, deterministic compliance
+
+模型输出事实. 规则引擎输出最终合规结论.
+
+** ADR-002: Four views share one time axis
+
+四个摄像头不能作为四套独立判断.
+
+** ADR-003: UNKNOWN is valid
+
+不可观测和低置信度不能被自动变成 PASS.
+
+** ADR-004: Persistent cameras and models
+
+RTSP 和重模型跨 Session 常驻.
+
+** ADR-005: Session state is isolated
+
+Rule/Action state 每个 Session 单独创建.
+
+** ADR-006: Explicit timestamp semantics
+
+arrival, PTS, RFC7273 reference 必须显式配置和审计.
+
+** ADR-007: Evidence First
+
+Violation 必须可回到四路证据.
+
+** ADR-008: Immutable Audit is source of recovery truth
+
+SQL 是可重建 Query Store.
+
+** ADR-009: Connectivity and completeness are separate
+
+DB 可连接不代表 SQL 历史已补齐.
+
+** ADR-010: Readiness gates formal Session start
+
+process alive 不等于生产 Ready.
+
+** ADR-011: Observability failure invalidates PASS
+
+camera/sync/processing/evidence/audit 持续故障进入 SYSTEM_QUALITY.
+
+** ADR-012: Crash recovery is explicit ABORTED
+
+缺 final.json 的 Session 通过受控恢复追加 SYSTEM-QUALITY-RECOVERY.
+
+* 13. Recommended Reading Order
 
 #+BEGIN_SRC text
-1. system-architecture
-2. action-model
-3. rule-engine-design
-4. database-design
-5. api-design
-6. deployment-design
-7. test-plan
-8. mvp-development-plan
+1. video-pose-system-architecture.org
+2. video-pose-design-index.org
+3. video-pose-action-model.org
+4. video-pose-rule-engine-design.org
+5. video-pose-native-gstreamer.org
+6. video-pose-session-lifecycle.org
+7. video-pose-session-readiness.org
+8. video-pose-in-session-quality-guard.org
+9. video-pose-evidence-design.org
+10. video-pose-audit-durability.org
+11. video-pose-persistence-reconciliation-health.org
+12. video-pose-edge-container-deployment.org
+13. video-pose-test-plan.org
 #+END_SRC
 
-* 8. MVP 边界
+* 14. Design Change Rule
 
-第一阶段只承诺:
+以下变化必须同步设计文档:
 
-- 单工位.
-- 单操作员.
-- 前后左右四路摄像头.
-- 单一标准作业.
-- 5-10 个步骤.
-- 5-10 类核心动作.
-- 3 类以上违规.
-- 自动评分.
-- 证据回放.
-
-MVP 不承诺通用动作理解和完全无盲区检测.
-
-* 9. 设计变更规则
-
-涉及以下内容的 PR 应同步更新设计文档:
-
-- Container 边界.
+- C4 Container boundary.
+- timestamp source.
+- Session lifecycle.
 - ActionEvent schema.
-- Rule DSL.
-- Session 状态机.
-- 数据库 schema.
-- 外部 API.
-- 事件协议.
-- 模型版本策略.
-- 验收指标.
+- Rule semantics.
+- SYSTEM_QUALITY semantics.
+- Evidence identity/lifecycle.
+- Audit/recovery contract.
+- SQL schema.
+- RBAC/API.
+- Readiness Gate.
+- Go/No-Go acceptance.
 
-重大设计变化建议增加 ADR.
+重大变化应增加或更新 ADR.

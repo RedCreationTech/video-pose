@@ -3,82 +3,184 @@
 
 * 当前版本
 
-Video Pose 0.30 已形成离线, 实时, 审计, 证据和生产运维闭环:
+Video Pose 0.41 已形成单工位生产 Edge 闭环:
 
 #+BEGIN_SRC text
-4 x Camera / Video
+4 x RTSP Cameras
        |
-Time Sync + Health + Reconnect
+Capture Backend
+arrival / PTS / RFC7273 reference
        |
-Bounded Queue / Drop Oldest
+PersistentCameraHub
        |
-YOLO + Tracking + RTMPose
+Four-view Sync + Drift Health
        |
-World Projection + Multi-view Identity
+PersistentModelPool
+YOLO + RTMPose
        |
-Human-Object / Zone Relation
+SessionAnalysisRuntime
+       |
+Perception / Geometry / Relations
        |
 ActionEvent
        |
-Realtime Rule Session
+RealtimeRuleSession
        |
-Violation / Score
+Violation / Score / PASS-FAIL
+       ^
        |
-HTTP + WebSocket + Prometheus
+SessionQualityMonitor
+camera / sync / processing / evidence / audit
+       |
+       +------> Async Evidence + Review
+       |
+       +------> Immutable Audit
+       |
+       +------> PostgreSQL Query Store
+                  |
+                  +--> Reconcile / Crash Recovery
 #+END_SRC
 
-* 实时服务
+* 核心设计原则
 
-安装:
+- AI 识别事实, Rule Engine 决定合规.
+- 四路摄像头共享时间轴.
+- Persistent Camera/Model 跨 Session 常驻.
+- Session 内 Rule/Action state 独立.
+- SYSTEM_QUALITY 可以直接让最终结果 FAIL.
+- Immutable Audit 是灾难恢复事实源.
+- PostgreSQL 是可重建 Query Store.
+- 正式 Session 通过 Readiness Gate 后才允许启动.
+- Evidence, Review, Audit, Reconciliation 和 Crash Recovery 都属于业务闭环.
+
+* 安装
+
+开发/基础实时:
 
 #+BEGIN_SRC sh
 pip install -e '.[api,db,video,yolo,gstreamer-native]'
 #+END_SRC
 
-启动:
+Pose 生产环境还需要与目标 Torch/CUDA 兼容的 MMPose/MMCV stack.
+
+检查环境:
 
 #+BEGIN_SRC sh
-video-pose-serve \
-  --config configs/offline-demo.yaml \
-  --host 0.0.0.0 \
-  --port 8080
+video-pose-doctor --config <runtime.yaml>
 #+END_SRC
 
-接口:
+* 实时服务
+
+#+BEGIN_SRC sh
+video-pose-serve   --config <runtime.yaml>   --database-url <database-url>   --reconcile-on-start   --auth-enabled   --host 0.0.0.0   --port 8080
+#+END_SRC
+
+生产建议通过 Docker Compose 和 TLS reverse proxy 运行.
+
+* 主要 API
 
 #+BEGIN_SRC text
-GET /health/live
-GET /health/ready
-GET /api/v1/runtime/health
-GET /api/v1/runtime/latest
-GET /metrics
-WS  /api/v1/realtime
+GET  /health/live
+GET  /health/ready
+
+GET  /api/v1/runtime/health
+GET  /api/v1/runtime/latest
+GET  /api/v1/runtime/persistence
+POST /api/v1/runtime/persistence/reconcile
+GET  /api/v1/runtime/persistence/incomplete-sessions
+POST /api/v1/runtime/persistence/incomplete-sessions/{id}/recover
+
+GET  /api/v1/cameras
+GET  /api/v1/cameras/{id}/snapshot.jpg
+
+GET  /api/v1/sessions/readiness
+POST /api/v1/sessions
+GET  /api/v1/sessions
+GET  /api/v1/sessions/current
+GET  /api/v1/sessions/current/evaluation
+POST /api/v1/sessions/{id}/stop
+POST /api/v1/sessions/{id}/abort
+
+GET  /api/v1/sessions/{id}/evidence
+GET  /api/v1/reviews/pending
+POST /api/v1/sessions/{id}/violations/{violation_id}/review
+
+GET  /metrics
+WS   /api/v1/realtime
 #+END_SRC
 
-* 实时 CLI
+* Capture Backends
+
+#+BEGIN_SRC text
+opencv
+gstreamer-opencv
+gstreamer-native
+#+END_SRC
+
+Native GStreamer timestamp modes:
+
+#+BEGIN_SRC text
+arrival
+pts
+reference
+#+END_SRC
+
+reference 模式用于 RFC7273 shared reference timestamp, 缺少 metadata 时直接失败.
+
+* 离线和回归
+
+离线分析:
 
 #+BEGIN_SRC sh
-video-pose-live \
-  --config configs/offline-demo.yaml \
-  --queue-size 2
+video-pose-analyze   --config configs/offline-demo.yaml   --output result.json   --evidence-dir output/evidence   --debug-overlay-dir output/debug
 #+END_SRC
 
-* 离线分析
+Golden Replay:
 
 #+BEGIN_SRC sh
-video-pose-analyze \
-  --config configs/offline-demo.yaml \
-  --output result.json \
-  --evidence-dir output/evidence \
-  --debug-overlay-dir output/debug
+video-pose-evaluate   --dataset datasets/golden-v1/manifest.yaml
 #+END_SRC
 
-* Golden Replay
+规则 Replay smoke:
 
 #+BEGIN_SRC sh
-video-pose-evaluate \
-  --dataset datasets/golden-v1/manifest.yaml
+video-pose-replay   --events fixtures/replay/compliant.jsonl   --rules fixtures/rules/assembly-a.yaml
 #+END_SRC
+
+* 稳定性和故障验证
+
+生产同构 72h Soak:
+
+#+BEGIN_SRC sh
+video-pose-managed-soak   --config <site-runtime.yaml>   --duration-hours 72   --rotation-seconds 3600   --sample-seconds 60   --output output/managed-soak-72h.json
+#+END_SRC
+
+确定性 Fault Replay:
+
+#+BEGIN_SRC sh
+video-pose-fault-evaluate   --scenario fixtures/faults/camera-outage.yaml   --scenario fixtures/faults/sync-stall.yaml   --scenario fixtures/faults/sync-drift.yaml   --scenario fixtures/faults/processing-error.yaml   --scenario fixtures/faults/processing-drop.yaml   --scenario fixtures/faults/evidence-pressure.yaml   --scenario fixtures/faults/audit-write-failure.yaml
+#+END_SRC
+
+* Persistence 和恢复工具
+
+#+BEGIN_SRC text
+video-pose-db
+video-pose-reindex
+video-pose-reconcile
+video-pose-recover-incomplete
+#+END_SRC
+
+语义:
+
+#+BEGIN_SRC text
+PostgreSQL connectivity READY
+          !=
+Reconciliation READY
+#+END_SRC
+
+数据库恢复后, Audit -> SQL reconciliation 负责修复故障期间漏写的数据.
+
+没有 final.json 的 Crash Session 通过受控 recovery 转为 ABORTED, 并追加 CRITICAL SYSTEM-QUALITY-RECOVERY.
 
 * 现场工具
 
@@ -87,16 +189,14 @@ video-pose-doctor
 video-pose-calibrate
 video-pose-camera-model
 video-pose-calibration-health
+video-pose-soak
+video-pose-managed-soak
+video-pose-fault-evaluate
 #+END_SRC
-
-* 文档
-
-详细 C4, 现场 PoC, 实时服务与测试设计见 =docs/=.
-
 
 * Edge Docker Compose
 
-生产边缘模板位于:
+生产资产:
 
 #+BEGIN_SRC text
 deploy/edge/Dockerfile
@@ -104,37 +204,86 @@ deploy/edge/entrypoint.sh
 deploy/compose/docker-compose.yml
 deploy/compose/docker-compose.gpu.yml
 deploy/compose/.env.example
+deploy/compose/runtime.example/
 #+END_SRC
 
-准备站点私有配置目录:
+准备私有站点配置:
 
 #+BEGIN_SRC sh
 cp -R deploy/compose/runtime.example deploy/compose/runtime
 cp deploy/compose/.env.example deploy/compose/.env
 #+END_SRC
 
-修改 =deploy/compose/runtime/session-manifest.yaml= 中的 RTSP URI, 并配置真实规则, 标定和模型路径. =runtime/= 已加入 =.gitignore=, 不要把摄像头密码提交到 Git.
+=deploy/compose/runtime/= 已加入 gitignore. 不要提交真实 RTSP 账号和密码.
 
-启动基础模式:
+基础模式:
 
 #+BEGIN_SRC sh
 cd deploy/compose
 docker compose up -d --build
 #+END_SRC
 
-NVIDIA GPU 节点:
+NVIDIA GPU:
 
 #+BEGIN_SRC sh
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.gpu.yml \
-  up -d --build
+docker compose   -f docker-compose.yml   -f docker-compose.gpu.yml   up -d --build
 #+END_SRC
 
-容器 entrypoint 默认执行:
+启动链:
 
 #+BEGIN_SRC text
-database migration
- -> video-pose-doctor
- -> video-pose-serve
+Alembic migration
+       |
+Doctor
+       |
+Serve
+       |
+Startup Audit-to-SQL reconciliation
+       |
+Session Readiness
 #+END_SRC
+
+* 生产数据目录
+
+#+BEGIN_SRC text
+/var/lib/video-pose/audit
+/var/lib/video-pose/evidence
+/var/cache/video-pose
+#+END_SRC
+
+Audit 目录是恢复事实源, Evidence 目录保存违规多视角证据.
+
+* 安全
+
+- Bearer Token 只配置 SHA-256 digest.
+- RBAC 分离 Session, Evidence, Review, Persistence Repair.
+- Camera catalog 不输出 RTSP URI.
+- Docker non-root.
+- read-only root filesystem.
+- cap_drop ALL.
+- no-new-privileges.
+- HTTP 默认仅绑定 localhost, 生产放在 TLS reverse proxy 后.
+
+* 文档
+
+入口:
+
+#+BEGIN_SRC text
+docs/video-pose-design-index.org
+docs/video-pose-system-architecture.org
+docs/video-pose-test-plan.org
+#+END_SRC
+
+系统设计文档均使用 Org-mode.
+
+* 当前重点
+
+代码已经覆盖生产闭环的主要基础设施. 继续进入真实现场前, 重点不是继续增加概念功能, 而是:
+
+- 建立目标工位 Acceptance Dataset.
+- 完成 Camera/RTSP/GPU hardware-in-loop.
+- 冻结规则和模型版本.
+- 完成独立 Calibration Health control points.
+- 跑 72h Managed Soak.
+- 记录真实 Accuracy/Recall/False Alarm.
+- 完成现场 Go/No-Go.

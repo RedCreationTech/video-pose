@@ -1,214 +1,238 @@
 #+TITLE: Video Pose Verification and Validation Plan
-#+SUBTITLE: 多摄像头动作规范检测系统测试与验收方案
+#+SUBTITLE: Multi-camera Action Compliance System Test and Acceptance Plan
 #+AUTHOR: RedCreationTech
-#+DATE: 2026-09-20
+#+DATE: 2026-09-21
 #+OPTIONS: toc:3 num:t
 
-* 1. 测试目标
+* 1. Verification Objective
 
-本测试计划验证系统是否能够在真实工业环境中持续, 稳定, 可解释地判断人员操作规范性.
+目标不是证明某一个模型 mAP 很高, 而是证明完整 Session 在真实工业场景中能够:
 
-测试不能只看单模型 mAP. 最终必须验证端到端业务结果.
+- 稳定采集四路视频.
+- 保持时间同步和可观测性.
+- 识别关键动作和工具.
+- 正确执行 SOP 规则.
+- 对违规产生证据.
+- 对不可观测/系统故障不误报 PASS.
+- 保存不可抵赖 Audit.
+- 在数据库/进程故障后可恢复.
+- 7x24 运行不出现资源和状态泄漏.
 
-测试层级:
+最终测试单位是 Operation Session, 不是单帧.
+
+* 2. Test Layers
 
 #+BEGIN_SRC text
-L0 Camera / Infrastructure
-L1 Perception Model
-L2 Pose and Multi-view Fusion
-L3 Action Recognition
-L4 Rule Engine
-L5 End-to-End Operation
-L6 Reliability / Performance / Security
-L7 Field Acceptance
+L0 Infrastructure / Camera
+L1 Perception
+L2 Geometry / Multi-view
+L3 Action Semantics
+L4 Deterministic Rules
+L5 Session E2E
+L6 Evidence / Audit / Recovery
+L7 Reliability / Performance / Security
+L8 Field Acceptance
 #+END_SRC
 
-* 2. 核心验收思想
+* 3. Dataset Separation
 
-建立三套相互分离的数据集:
+至少建立:
 
 - Train Set.
 - Validation Set.
 - Acceptance Test Set.
+- Golden Replay Set.
+- Fault Scenario Set.
 
-Acceptance Test Set 在模型和阈值冻结前不得用于调参.
+Acceptance Set 在模型, threshold 和规则冻结前不得用于调参.
 
-测试人员和训练人员应尽量分离.
+关键违规 Ground Truth 建议双人独立标注并仲裁.
 
-* 3. Ground Truth
+* 4. Session Ground Truth
 
-每条验收视频需要人工标注:
+每个验收 Session 标注:
 
 - session start/end.
-- operator id, 使用匿名测试编号.
-- action interval.
-- object/tool.
-- step start/end.
-- violation type.
+- anonymous operator id.
+- action intervals.
+- hand if relevant.
+- tool/object.
+- source/target zone.
+- SOP step transitions.
+- expected violations.
 - visibility/occlusion.
 - camera quality.
-- final compliance result.
+- expected final PASS/FAIL.
+- expected evidence interval.
 
-关键违规建议双人独立标注, 有分歧时仲裁.
+* 5. Data Matrix
 
-* 4. 测试数据矩阵
+** 5.1 Operators
 
-至少覆盖以下维度.
+- height/body-shape variation.
+- left/right handed.
+- experienced/new operator.
+- different workwear.
+- gloves/PPE.
 
-** 4.1 人员
+** 5.2 Environment
 
-- 身高差异.
-- 体型差异.
-- 左撇子/右撇子.
-- 熟练人员/新手.
-- 不同工作服.
-- 戴手套/不戴手套.
+- normal lighting.
+- dim lighting.
+- backlight.
+- local glare.
+- equipment reflection.
+- background personnel.
+- workstation layout tolerance.
 
-** 4.2 环境
+** 5.3 Motion
 
-- 正常照明.
-- 偏暗.
-- 局部强光.
-- 背光.
-- 设备反光.
-- 背景人员经过.
-- 工位轻微变化.
+- standard speed.
+- fast.
+- slow.
+- pause.
+- undo/rework.
+- repeated operation.
+- hand switching.
 
-** 4.3 动作
+** 5.4 Occlusion
 
-- 标准速度.
-- 快速操作.
-- 慢速操作.
-- 中途暂停.
-- 回退重做.
-- 左右手交换.
-- 连续重复动作.
+- hand/body occlusion.
+- tool occlusion.
+- workpiece occlusion.
+- one camera completely unavailable.
+- two views partially degraded.
 
-** 4.4 遮挡
+* 6. Camera and Capture Verification
 
-- 手被身体遮挡.
-- 工具被手遮挡.
-- 工件被设备遮挡.
-- 单摄像头完全不可见.
-- 两个视角同时部分遮挡.
+测试:
 
-* 5. Camera Test
+- RTSP connect.
+- reconnect.
+- H.264/H.265.
+- target resolution/FPS.
+- timestamp monotonicity.
+- native GStreamer PTS mode.
+- RFC7273 reference mode when available.
+- network jitter.
+- camera reboot.
+- switch/VLAN interruption.
 
-测试项:
+验收记录:
 
-- RTSP 连接.
-- 自动重连.
-- 分辨率.
-- 实际 FPS.
-- dropped frame.
-- 时间戳单调性.
-- clock offset.
-- 网络抖动.
-- 断网恢复.
+| Metric | Recommended Gate |
+| continuous runtime | >= 72 h |
+| unrecoverable camera outage | 0 |
+| timestamp rollback | 0 |
+| reconnect test cases | 100% recovered |
+| normal capture quality | site-specific |
 
-验收建议:
+Camera Health freshness 必须验证使用 local monotonic arrival time, 不能把 NTP/RFC7273 absolute timestamp 当本机 monotonic.
 
-| 指标 | MVP 目标 |
-| 连续运行 | >= 72 h |
-| 自动重连成功率 | 100% in test cases |
-| 正常网络丢帧率 | < 1% |
-| 多相机同步误差 | < 20 ms, NTP 方案 |
-| 时间戳回退 | 0 |
+* 7. Multi-camera Sync Verification
 
-* 6. Calibration Test
+测量:
 
-指标:
+- reference frame attempts.
+- emitted synchronized sets.
+- sync miss ratio.
+- missing buffer.
+- tolerance miss.
+- stale reference.
+- P95/P99 skew.
+- signed per-camera offset.
+- drift ms/min.
 
-- reprojection error.
-- 3D point consistency.
-- zone boundary accuracy.
-- calibration drift.
+生产默认 Gate:
 
-测试方法:
+#+BEGIN_SRC text
+sync warmup >= 30 emitted sets
+Session start miss ratio <= 20%
+Session start P99 skew <= 20 ms
+Session start absolute drift <= 2 ms/min
 
-1. 在已知位置放置标定点.
-2. 四视角分别检测.
-3. 重建世界坐标.
-4. 与物理测量值比较.
+in-session quality:
+miss ratio <= 30%
+P99 skew <= 30 ms
+absolute drift <= 3 ms/min
+#+END_SRC
 
-建议目标:
+实际项目可以根据动作时间尺度重新冻结阈值.
 
-| 指标 | 目标 |
-| 平均 3D 定位误差 | < 30 mm, MVP |
-| 95 分位误差 | < 60 mm |
-| Zone 边界判定 | >= 95% |
+* 8. Calibration Verification
 
-最终阈值按动作尺度调整.
+** 8.1 Planar
 
-* 7. Person Detection Test
+- known point projection.
+- zone boundary.
+- hand/tool position consistency.
 
-指标:
+** 8.2 Perspective 3D
+
+如果启用 triangulation, 使用独立 Validation Control Points.
+
+每路相机统计:
+
+- point count.
+- reprojection RMSE.
+- max reprojection error.
+
+控制点应覆盖实际工作包络, 不能只集中在图像中心.
+
+生产可以启用 Calibration Health Gate, Doctor 和 Session Readiness 共用同一算法.
+
+* 9. Person, Tool and Pose Model Tests
+
+** 9.1 Person
+
+- operator recall.
+- precision.
+- track loss.
+- ID switch.
+
+** 9.2 Tools/Objects
+
+每个关键类别单独统计:
 
 - Precision.
 - Recall.
-- mAP50.
-- ID switch.
-- track loss.
+- confusion matrix.
+- small-object recall.
+- occluded recall.
 
-工业应用更关注目标操作员 Recall 和稳定 tracking.
-
-建议:
-
-| 指标 | MVP 目标 |
-| Operator Recall | >= 98% |
-| Precision | >= 97% |
-| 关键动作期间 track loss | < 1% time |
-
-* 8. Pose Test
+** 9.3 Pose
 
 2D:
 
-- PCK.
-- OKS/mAP.
-- wrist/elbow/shoulder 分项.
+- wrist/elbow/shoulder PCK/OKS.
 
 3D:
 
 - MPJPE.
-- wrist 位置误差.
+- wrist position error.
 - temporal jitter.
 
-手腕通常是动作识别关键点, 不应只看全身平均值.
+不能只报告全类别平均值.
 
-* 9. Object and Tool Test
+* 10. Action Recognition Verification
 
-每个业务关键工具单独统计:
-
-#+BEGIN_SRC text
-precision
-recall
-confusion matrix
-small-object recall
-occluded recall
-#+END_SRC
-
-不能只报告所有类别平均 mAP.
-
-例如 torque_wrench 与 open_end_wrench 如果容易混淆, 必须单独建立错误矩阵.
-
-* 10. Action Recognition Test
-
-每个 ActionAtom 统计:
+每个 ActionAtom:
 
 - Precision.
 - Recall.
 - F1.
-- start boundary error.
-- end boundary error.
+- start boundary MAE.
+- end boundary MAE.
 - confusion matrix.
 
-MVP 建议关键动作:
+典型工业 Action:
 
 #+BEGIN_SRC text
 PICK
 PLACE
 MOVE
 INSERT
+REMOVE
 ROTATE
 OPERATE_TOOL
 INSPECT
@@ -216,163 +240,325 @@ ENTER_ZONE
 LEAVE_ZONE
 #+END_SRC
 
-建议目标:
+最终 threshold 使用 Acceptance Set 冻结.
 
-| 指标 | 关键动作 |
-| Precision | >= 95% |
-| Recall | >= 93% |
-| F1 | >= 94% |
-| 动作边界 MAE | < 300 ms |
+* 11. Rule Engine Verification
 
-真实目标根据 PoC 数据再冻结.
+规则层不依赖视频, 使用确定性 ActionEvent fixture.
 
-* 11. Multi-view Fusion Test
+必须覆盖:
 
-构造:
-
-- front unavailable.
-- rear unavailable.
-- left unavailable.
-- right unavailable.
-- one view occluded.
-- two views partially occluded.
-
-比较:
-
-#+BEGIN_SRC text
-single-view baseline
-vs
-four-view fusion
-#+END_SRC
-
-验收必须证明多视角带来实际提升, 否则复杂度没有价值.
-
-* 12. Rule Engine Test
-
-规则测试不依赖视频, 使用确定性 ActionEvent fixture.
-
-覆盖:
-
-- 顺序正确.
-- 顺序错误.
-- 漏步骤.
-- 错工具.
-- 错工件.
-- 超时.
-- 区域错误.
-- safety violation.
-- UNKNOWN.
-- 重复事件.
-- 乱序事件.
-- session replay.
+- compliant sequence.
+- order error.
+- missing step.
+- wrong tool/object.
+- wrong zone.
+- timeout.
+- duration range.
+- start delay.
+- duplicate event.
+- duplicate sequence.
+- replay determinism.
+- session isolation.
+- external SYSTEM_QUALITY violation.
 
 目标:
 
 #+BEGIN_SRC text
-Rule semantic test pass = 100%
-Replay determinism = 100%
-Duplicate violation due to replay = 0
+rule fixture pass = 100%
+replay determinism = 100%
+duplicate violation = 0
 #+END_SRC
 
-* 13. End-to-End Test
+* 12. End-to-End Session Metrics
 
-最终测试单位不是 frame, 而是完整 operation session.
+业务指标:
 
-每次 session 输出:
-
-- step sequence.
-- detected actions.
-- violations.
-- final score.
-- pass/fail.
-- evidence.
-
-最终业务指标:
-
-** 13.1 Violation Detection Recall
+** Violation Recall
 
 #+BEGIN_SRC text
 TP / (TP + FN)
 #+END_SRC
 
-** 13.2 False Alarm Rate
+** Violation Precision
 
 #+BEGIN_SRC text
-FP / total compliant sessions
+TP / (TP + FP)
 #+END_SRC
 
-** 13.3 Session Classification
+** Compliant False Alarm Rate
 
-- compliant session accuracy.
-- non-compliant session recall.
-- critical violation recall.
+#+BEGIN_SRC text
+false positive compliant Sessions / all compliant Sessions
+#+END_SRC
 
-建议第一阶段验收目标:
+建议首阶段讨论值:
 
-| 指标 | 目标 |
-| 关键违规 Recall | >= 95% |
-| 一般违规 Recall | >= 90% |
-| 违规 Precision | >= 90% |
-| 合规 session 误报率 | <= 5% |
-| CRITICAL 漏报 | 在已定义可观测范围内趋近 0, 单独报告 |
+| Metric | Example Target |
+| critical violation recall | >= 95% in observable acceptance set |
+| general violation recall | >= 90% |
+| violation precision | >= 90% |
+| compliant false alarm rate | <= 5% |
 
-不能承诺视觉系统在完全遮挡或不可观测情况下零漏报. 必须明确可观测边界.
+这些值必须由项目 Acceptance Set 最终确认.
 
-* 14. Negative Test
+视觉不可观测区间必须独立统计, 不得混入"正常可见"准确率.
 
-刻意制造:
+* 13. Evidence Verification
 
-- 拿错工具.
-- 跳过一步.
-- 先做后一步.
-- 工具放错区域.
-- 一只手遮挡.
-- 用类似外形工具替代.
-- 做到一半停止.
-- 两次重复同一步骤.
-- 非操作人员进入画面.
-- 操作员短暂离开.
+每个自动违规验证:
 
-* 15. Boundary Test
+- evidence exists.
+- correct stable identity.
+- correct pre-roll/post-roll.
+- camera mapping.
+- COMPLETE/PARTIAL semantics.
+- SHA-256 matches.
+- review_status sync.
+- permission enforcement.
+- unreviewed evidence retention protection.
 
-- 动作持续时间刚好等于 min.
-- 刚好低于 min.
-- 刚好等于 max.
-- 刚好高于 max.
-- confidence 恰好位于阈值.
-- 手在 zone 边界.
-- 工具在两个相邻 zone 边界.
+Evidence Worker 压力测试:
 
-* 16. Long Running Test
+- queue saturation.
+- JPEG encoder error.
+- disk error.
+- over capacity.
+- retention cleanup.
+
+持续 Evidence 故障必须生成 SYSTEM_QUALITY-EVIDENCE.
+
+* 14. Audit Verification
+
+Audit 是灾难恢复事实源.
+
+每个 Session 验证:
+
+#+BEGIN_SRC text
+metadata.json
+updates.jsonl
+reviews.jsonl
+final.json
+recovery.json optional
+#+END_SRC
 
 测试:
 
-- 8 h.
-- 24 h.
-- 72 h.
-- 连续多 session.
+- append success.
+- append failure.
+- writable probe.
+- DEGRADED -> READY recovery.
+- cumulative error counter.
+- final.json failure.
+- SYSTEM_QUALITY-AUDIT.
+- Session returned passed=false after audit failure.
 
-监测:
+Audit 故障不能被 SQL 成功掩盖.
 
-- RAM.
-- GPU memory.
-- file descriptor.
-- thread count.
-- queue lag.
-- latency.
-- disk.
-- video reconnect.
+* 15. Persistence and Reconciliation Verification
 
-成功标准:
+SQL 是 Query Store.
 
-- 无持续内存增长趋势.
-- 无 GPU memory leak.
-- latency 不随运行时间明显恶化.
-- session 数据不串扰.
+测试:
 
-* 17. Performance Test
+- normal dual-write.
+- DB unavailable during update.
+- current Session continues with JSONL.
+- connectivity status DEGRADED.
+- probe recovers connectivity to READY.
+- reconciliation stays DIRTY.
+- Audit -> SQL reconcile.
+- consistency verification after repair.
+- second reconcile idempotently SKIPPED.
+- review state restored.
+- final status/score/passed restored.
 
-负载模型:
+生产 Gate:
+
+#+BEGIN_SRC text
+connectivity = READY
+reconciliation = READY
+#+END_SRC
+
+两者必须同时成立才能开始新正式 Session.
+
+* 16. Crash Recovery Verification
+
+构造:
+
+#+BEGIN_SRC text
+metadata exists
+updates exist
+final missing
+#+END_SRC
+
+验证:
+
+- listed as incomplete.
+- normal reconciliation keeps DIRTY.
+- explicit recovery required.
+- recovery.json created.
+- prior known step/violation state retained.
+- SYSTEM-QUALITY-RECOVERY appended.
+- status = ABORTED.
+- score = 0.
+- passed = false.
+- subsequent reconciliation returns READY.
+
+禁止把 crash Session 自动补成 COMPLETED.
+
+* 17. Session Readiness Test
+
+生产模板必须覆盖:
+
+- Camera Hub not running.
+- model pool not loaded.
+- camera offline/reconnecting.
+- sync warmup insufficient.
+- sync miss high.
+- P99 skew high.
+- drift high.
+- Evidence errors.
+- Evidence over capacity.
+- Audit DEGRADED.
+- storage low ratio.
+- storage low absolute GB.
+- PostgreSQL unavailable.
+- reconciliation DIRTY.
+- required rule/manifest/calibration missing.
+- calibration health failed.
+
+Readiness endpoint:
+
+#+BEGIN_SRC text
+GET /api/v1/sessions/readiness
+GET /health/ready
+#+END_SRC
+
+正式 Session Start 在失败时返回 503 和结构化原因.
+
+* 18. In-session Quality Guard Test
+
+正式 Session 开始后故障不能被忽略.
+
+当前保护:
+
+- camera offline/stale.
+- sync stall/miss/skew/drift.
+- processing errors.
+- processing FrameSet drops.
+- Evidence errors/drops/capacity.
+- Audit write failure.
+
+持续故障形成 CRITICAL:
+
+#+BEGIN_SRC text
+SYSTEM_QUALITY
+#+END_SRC
+
+最终 Session 必须 =passed=false=.
+
+故障恢复后 Monitor 应 re-arm, 第二次故障生成新 incident.
+
+* 19. Deterministic Fault Matrix
+
+CI 当前运行 YAML fault scenarios:
+
+#+BEGIN_SRC text
+camera-outage.yaml
+sync-stall.yaml
+sync-drift.yaml
+processing-error.yaml
+processing-drop.yaml
+evidence-pressure.yaml
+audit-write-failure.yaml
+#+END_SRC
+
+命令:
+
+#+BEGIN_SRC sh
+video-pose-fault-evaluate   --scenario fixtures/faults/camera-outage.yaml   --scenario fixtures/faults/sync-stall.yaml   --scenario fixtures/faults/sync-drift.yaml   --scenario fixtures/faults/processing-error.yaml   --scenario fixtures/faults/processing-drop.yaml   --scenario fixtures/faults/evidence-pressure.yaml   --scenario fixtures/faults/audit-write-failure.yaml
+#+END_SRC
+
+这些是确定性语义回归, 不替代硬件故障注入.
+
+* 20. Golden Replay
+
+Golden Set 至少覆盖:
+
+- compliant.
+- each core business violation.
+- ordering.
+- timeout.
+- zone.
+- tool/object.
+- boundary conditions.
+
+CI 至少执行 smoke replay.
+
+正式模型发布建议执行完整:
+
+#+BEGIN_SRC sh
+video-pose-evaluate   --dataset datasets/golden-v1/manifest.yaml
+#+END_SRC
+
+Golden Set 应版本化 manifest/checksum, 大视频放对象存储或 LFS.
+
+* 21. Long-running and Managed Soak
+
+** 21.1 Legacy Soak
+
+验证单 Live Runtime.
+
+** 21.2 Production-shaped Managed Soak
+
+推荐正式候选版本:
+
+#+BEGIN_SRC sh
+video-pose-managed-soak   --config <site-runtime.yaml>   --duration-hours 72   --rotation-seconds 3600   --sample-seconds 60   --output output/managed-soak-72h.json
+#+END_SRC
+
+它使用:
+
+- PersistentCameraHub.
+- PersistentModelPool.
+- repeated Session start/stop.
+- real Evidence Worker.
+- real health metrics.
+
+监测 Gate:
+
+- Camera reconnect/read errors.
+- processing errors/drop.
+- latency P99.
+- RSS growth.
+- GPU reserved memory.
+- sync miss/P99/drift.
+- Evidence errors/drop/capacity.
+- Audit write errors.
+- filesystem low-water.
+- Session transition errors/latency.
+
+* 22. Resource Leak Test
+
+至少检查:
+
+- RSS.
+- GPU allocated/reserved.
+- file descriptors.
+- threads.
+- processing queue.
+- Evidence queue.
+- audit/evidence disk growth.
+- Session-to-Session state isolation.
+
+现有 Soak 已覆盖 RSS, GPU memory, queue, latency, Evidence, Audit, storage 和 Session rotation.
+
+FD/thread count 仍建议加入现场 OS 监控.
+
+* 23. Performance Test
+
+参考负载:
 
 #+BEGIN_SRC text
 4 cameras
@@ -381,188 +567,189 @@ FP / total compliant sessions
 1 active operator
 20 object classes
 10 action classes
-200 active rules
+rules 20-200
 #+END_SRC
 
 测量:
 
-- decode latency.
-- perception latency.
-- pose latency.
-- action latency.
-- rule latency.
-- WebSocket latency.
-- end-to-end latency.
+- capture/decode.
+- synchronization.
+- detector.
+- pose.
+- geometry.
+- action.
+- rule.
+- evidence.
+- WebSocket.
+- end-to-end.
 
-目标示例:
+生产目标示例:
 
-| 指标 | MVP |
-| 实时事件端到端 P95 | < 500 ms |
-| Rule Engine P95 | < 20 ms |
-| UI 推送 P95 | < 200 ms |
-| GPU memory | 不超过选定硬件稳定上限 |
-| dropped frame | < 1% normal load |
+| Metric | Initial Target |
+| real-time decision P95 | < 500 ms |
+| processing P99 | <= project-defined gate |
+| normal processing drop | within project gate |
+| sync P99 | <= 20 ms start gate |
+| GPU memory | stable under target hardware |
 
-* 18. Degradation Test
+不得仅根据 GPU 型号宣称四路实时能力, 必须在目标模型和分辨率上 benchmark.
 
-模拟:
+* 24. Security Verification
 
-- 1 camera offline.
-- 2 cameras offline.
-- GPU overload.
-- model unavailable.
-- Redis unavailable.
-- PostgreSQL unavailable.
-- center network unavailable.
-- MinIO temporarily unavailable.
+覆盖:
 
-检查系统是否:
+- unauthenticated business API -> 401.
+- wrong role -> 403.
+- Evidence access boundary.
+- review mutation boundary.
+- persistence repair only ADMIN/ENGINEER.
+- WebSocket token.
+- token digest storage.
+- RTSP URI not exposed by Camera catalog.
+- production TLS termination.
+- container non-root.
+- read-only root FS.
+- cap_drop ALL.
+- no-new-privileges.
+- secrets absent from Git.
 
-- 明确展示 DEGRADED.
-- 保留未发送数据.
-- 不把未知误报为合规.
-- 恢复后正确补传.
+Health probe endpoints intentionally unauthenticated.
 
-* 19. Evidence Test
+* 25. Deployment Verification
 
-对每个 violation 检查:
+Edge image启动顺序:
 
-- 视频片段存在.
-- 时间点正确.
-- camera 对应正确.
-- 前后缓冲足够.
-- overlay 与原视频同步.
-- sha256 正确.
-- 权限控制有效.
-
-* 20. Security Test
-
-- 未授权 API.
-- 越权访问他人视频.
-- expired token.
-- signed URL 过期.
-- RTSP 凭据泄露检查.
-- container privilege.
-- dependency vulnerability.
-- audit trail.
-
-* 21. Privacy Test
+#+BEGIN_SRC text
+Alembic migrate
+Doctor
+Serve
+Startup reconciliation
+Readiness warmup
+#+END_SRC
 
 验证:
 
-- 删除策略.
-- 导出权限.
-- 人员匿名化.
-- 原始视频保留期.
-- 删除后对象存储同步删除.
-- 审计日志保留.
+- migration retry.
+- Doctor blocks missing model/GStreamer/MMCV/CUDA.
+- Postgres not host-published.
+- audit/evidence volumes persistent.
+- config/model mounts read-only.
+- restart does not erase Audit.
+- restart detects incomplete Session.
+- startup reconciliation skips healthy history.
 
-* 22. Model Regression Test
+* 26. Runtime Fingerprint Verification
 
-每个模型新版本必须与基准版本比较:
+每个 Session metadata 必须包含:
 
-#+BEGIN_SRC text
-accuracy
-latency
-GPU memory
-critical classes
-occluded scenes
-field data
-#+END_SRC
+- capture backend.
+- timestamp source.
+- sync tolerance.
+- camera clock offsets.
+- config SHA-256.
+- manifest SHA-256.
+- rules SHA-256.
+- zones SHA-256.
+- calibration hashes.
+- control-point hash when enabled.
 
-禁止只看总体平均指标后直接升级.
+现场验收报告应保存 Edge image digest 与 Session runtime fingerprint.
 
-* 23. Rule Regression Test
+* 27. Current CI Gate
 
-每个 rule_set 发布前自动运行 fixture.
-
-结果保存:
-
-- rule_set version.
-- test case version.
-- pass/fail.
-- expected decision.
-- actual decision.
-
-* 24. Test Dataset 目录建议
+GitHub Actions 当前执行:
 
 #+BEGIN_SRC text
-tests/data/
-  camera/
-  calibration/
-  perception/
-  action/
-  rules/
-  e2e/
-  regression/
+pip install -e .[dev]
+ruff check src tests
+pytest
+Replay smoke
+Fault scenario smoke
 #+END_SRC
 
-大视频文件不要直接提交 Git, 使用对象存储或 Git LFS, repo 仅保存 manifest 和 checksum.
+CI 是最低回归门槛, 不包含 GPU/RTSP 真实硬件.
 
-* 25. 自动化测试层次
+* 28. Hardware-in-loop Degradation Test
 
-#+BEGIN_SRC text
-Unit
-  |
-Contract
-  |
-Component
-  |
-Integration
-  |
-Video Replay
-  |
-E2E
-  |
-Field Acceptance
-#+END_SRC
+现场仍必须真实注入:
 
-Video Replay 是本系统最重要的自动化测试手段之一.
+- unplug one camera.
+- reboot one camera.
+- RTSP auth failure.
+- VLAN interruption.
+- jitter/packet loss.
+- GPU overload/OOM.
+- disk low-water.
+- audit volume read-only.
+- PostgreSQL restart.
+- host process kill -9.
+- host reboot.
+- clock drift/time service failure.
 
-* 26. Golden Replay Set
+检查:
 
-建立固定 Golden Set.
+- DEGRADED/Readiness.
+- SYSTEM_QUALITY.
+- recovery/reconciliation.
+- no false PASS.
+- evidence/audit survival.
 
-要求:
-
-- 20-50 个短 session 起步.
-- 包含所有关键违规.
-- 每个版本发布自动重放.
-- 结果与 expected JSON 比较.
-- 模型更新允许数值置信度变化, 但关键业务决策不得无解释漂移.
-
-* 27. 现场验收
+* 29. Field Acceptance Sample Size
 
 第一阶段建议至少:
 
-- 3-5 名操作人员.
-- 每人 20 个合规 session.
-- 每人 10 个故意违规 session.
-- 总计 >= 150 个 session.
+- 3-5 operators.
+- >= 20 compliant Sessions/operator.
+- >= 10 deliberately non-compliant Sessions/operator.
+- total >= 150 Sessions.
 
-如果实际工艺动作复杂, 扩大样本.
+复杂工艺需要更大样本.
 
-现场验收报告至少包含:
+每个关键违规要有足够正样本, 不能只追求总 Session 数.
 
-- 测试环境.
-- 摄像头配置.
-- 模型版本.
-- 规则版本.
-- 数据分布.
-- 指标.
-- 错误案例.
-- 不可观测案例.
-- 剩余风险.
+* 30. Field Acceptance Report
 
-* 28. Go/No-Go Gate
+至少记录:
 
-MVP 可进入现场试运行的条件:
+- exact Edge image/version.
+- hardware.
+- camera model/firmware.
+- timestamp mode.
+- network topology.
+- runtime fingerprint.
+- model paths/versions.
+- rule version.
+- calibration/control points.
+- test distribution.
+- accuracy metrics.
+- false alarms.
+- unavailable/UNKNOWN periods.
+- quality incidents.
+- reconciliation/recovery events.
+- remaining risks.
 
-- Camera 72 h 稳定测试通过.
-- Golden Replay 100% 执行通过.
-- 关键违规 Recall 达到约定阈值.
-- 合规误报率达到约定阈值.
-- evidence 完整.
-- 无 P1 安全和数据丢失缺陷.
-- 所有 UNKNOWN 场景 UI 能明确展示.
-- 版本和规则可回滚.
+* 31. Go/No-Go Gate
+
+进入生产试运行前至少满足:
+
+- CI green.
+- Rule semantic regression 100%.
+- Golden Replay accepted.
+- production Doctor READY.
+- Calibration Health accepted if enabled.
+- 72 h Managed Soak accepted.
+- planned camera disconnect/reconnect accepted.
+- sync P99/drift accepted.
+- processing/evidence/audit gates accepted.
+- filesystem headroom accepted.
+- PostgreSQL connectivity READY.
+- persistence reconciliation READY.
+- incomplete Audit Session count = 0.
+- key violation recall/precision accepted by project.
+- compliant false alarm rate accepted.
+- Evidence integrity/review accepted.
+- no P1 security/data-loss defect.
+- runtime fingerprint archived.
+- rollback plan verified.
+
+如果任何关键观测链失效却仍能得到 PASS, 直接判定 No-Go.
