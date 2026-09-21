@@ -136,6 +136,12 @@ class SessionQualityRuntimeConfig(BaseModel):
     severity: Literal["MINOR", "MAJOR", "CRITICAL"] = "CRITICAL"
 
 
+class ModelWarmupRuntimeConfig(BaseModel):
+    enabled: bool = False
+    image_size: int = Field(default=640, ge=64, le=4096)
+    max_latency_ms: float = Field(default=15000.0, gt=0.0)
+
+
 class ModelReleaseRuntimeConfig(BaseModel):
     enabled: bool = False
     manifest: str | None = None
@@ -152,6 +158,7 @@ class CalibrationHealthRuntimeConfig(BaseModel):
 class SessionReadinessRuntimeConfig(BaseModel):
     enabled: bool = False
     require_all_cameras_online: bool = True
+    require_model_warmup: bool = False
     allow_camera_degraded: bool = False
     require_sync: bool = True
     min_sync_emitted_total: int = Field(default=30, ge=0)
@@ -225,6 +232,9 @@ class OfflineAnalysisConfig(BaseModel):
     )
     model_release: ModelReleaseRuntimeConfig = Field(
         default_factory=ModelReleaseRuntimeConfig
+    )
+    model_warmup: ModelWarmupRuntimeConfig = Field(
+        default_factory=ModelWarmupRuntimeConfig
     )
     session_quality: SessionQualityRuntimeConfig = Field(
         default_factory=SessionQualityRuntimeConfig

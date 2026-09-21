@@ -100,6 +100,8 @@ class PersistentLiveSessionController:
     def start_hub(self) -> None:
         if self.model_pool is not None:
             self.model_pool.load()
+            if self.model_pool.warmup_enabled:
+                self.model_pool.warmup()
         self.hub.start()
         log_event(
             LOGGER,
@@ -300,6 +302,11 @@ class PersistentLiveSessionController:
         snapshot = self.hub.health_snapshot()
         return snapshot.model_copy(
             update={
+                "model_warmup": (
+                    self.model_pool.warmup_health()
+                    if self.model_pool is not None
+                    else None
+                ),
                 "audit": self.audit.health(),
                 "storage": sample_runtime_storage(
                     self.config,

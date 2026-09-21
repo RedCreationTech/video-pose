@@ -56,6 +56,33 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
             ]
         )
 
+    warmup = snapshot.model_warmup
+    if warmup is not None:
+        lines.extend(
+            [
+                _metric(
+                    "video_pose_model_warmup_enabled",
+                    1 if warmup.enabled else 0,
+                ),
+                _metric(
+                    "video_pose_model_warmup_ready",
+                    1 if warmup.status == "PASS" else 0,
+                ),
+                _metric(
+                    "video_pose_model_warmup_latency_ms",
+                    warmup.latency_ms or 0.0,
+                ),
+                _metric(
+                    "video_pose_model_warmup_detector_results",
+                    warmup.detector_result_count,
+                ),
+                _metric(
+                    "video_pose_model_warmup_pose_results",
+                    warmup.pose_result_count,
+                ),
+            ]
+        )
+
     sync = snapshot.sync
     if sync is not None:
         lines.extend(

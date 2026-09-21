@@ -1,0 +1,118 @@
+#+TITLE: Video Pose Model Warmup Readiness
+#+SUBTITLE: Verify Real Detector and Pose Inference Before Formal Sessions
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Problem
+
+Loading model objects is not enough.
+
+The first real inference can still fail because of:
+
+- CUDA kernel/runtime mismatch.
+- incompatible Torch/MMCV operators.
+- device allocation failure.
+- inference API incompatibility.
+- model graph initialization errors.
+
+A formal Session should not be the first place these failures are discovered.
+
+* 2. Warmup
+
+PersistentModelPool can perform one synthetic inference after model load.
+
+Detector:
+
+#+BEGIN_SRC text
+640 x 640 x 3 uint8 black BGR frame
+  -> detector.detect()
+#+END_SRC
+
+Pose, when enabled:
+
+#+BEGIN_SRC text
+same synthetic frame
+  + synthetic person bbox
+  -> pose_estimator.infer()
+#+END_SRC
+
+The synthetic image size is configurable.
+
+* 3. Health
+
+Warmup status:
+
+#+BEGIN_SRC text
+DISABLED
+NOT_RUN
+RUNNING
+PASS
+FAIL
+#+END_SRC
+
+Health records:
+
+- latency_ms.
+- detector_result_count.
+- pose_result_count.
+- error_type.
+- started_at.
+- completed_at.
+
+The raw exception text is not exported.
+
+* 4. Startup semantics
+
+Production flow:
+
+#+BEGIN_SRC text
+ModelPool.load()
+      |
+ModelPool.warmup()
+      |
+Camera Hub starts
+      |
+Readiness
+#+END_SRC
+
+Warmup failure does not intentionally kill the API process.
+
+It remains observable through Health/Prometheus and blocks formal Session start.
+
+* 5. Readiness
+
+Production template:
+
+#+BEGIN_SRC yaml
+model_warmup:
+  enabled: true
+  image_size: 640
+  max_latency_ms: 15000
+
+readiness:
+  require_model_warmup: true
+#+END_SRC
+
+Readiness requires:
+
+- status = PASS.
+- latency <= configured max.
+
+* 6. Prometheus
+
+#+BEGIN_SRC text
+video_pose_model_warmup_enabled
+video_pose_model_warmup_ready
+video_pose_model_warmup_latency_ms
+video_pose_model_warmup_detector_results
+video_pose_model_warmup_pose_results
+#+END_SRC
+
+* 7. Managed Soak
+
+If warmup is enabled, Soak fails when:
+
+- status != PASS.
+- warmup latency exceeds the Soak threshold.
+
+This makes model runtime compatibility part of the release gate, not just a deployment assumption.

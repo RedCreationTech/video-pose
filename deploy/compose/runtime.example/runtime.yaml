@@ -21,6 +21,11 @@ model_release:
   manifest: /etc/video-pose/model-release.json
   verify_on_doctor: true
 
+model_warmup:
+  enabled: true
+  image_size: 640
+  max_latency_ms: 15000
+
 identity:
   enabled: true
   distance_threshold: 120
@@ -55,6 +60,7 @@ action_min_confidence: 0.75
 readiness:
   enabled: true
   require_all_cameras_online: true
+  require_model_warmup: true
   allow_camera_degraded: false
   require_sync: true
   min_sync_emitted_total: 30

@@ -138,6 +138,48 @@ def evaluate_session_readiness(
             "loaded" if loaded else "not loaded",
         )
 
+    if policy.require_model_warmup:
+        if model_pool is None:
+            _check(
+                checks,
+                "model-warmup",
+                False,
+                "model pool is unavailable",
+            )
+        else:
+            method = getattr(
+                model_pool,
+                "warmup_health",
+                None,
+            )
+            if not callable(method):
+                _check(
+                    checks,
+                    "model-warmup",
+                    False,
+                    "model warmup health is unavailable",
+                )
+            else:
+                warmup = method()
+                passed = (
+                    warmup.status == "PASS"
+                    and warmup.latency_ms is not None
+                    and warmup.latency_ms
+                    <= config.config.model_warmup.max_latency_ms
+                )
+                _check(
+                    checks,
+                    "model-warmup",
+                    passed,
+                    (
+                        f"status={warmup.status}, "
+                        f"latency_ms={warmup.latency_ms}, "
+                        "max_latency_ms="
+                        f"{config.config.model_warmup.max_latency_ms}, "
+                        f"error_type={warmup.error_type}"
+                    ),
+                )
+
     snapshot = hub.health_snapshot()
     state_by_id = {
         camera.camera_id: camera.state

@@ -7,7 +7,7 @@
 * 1. 当前基线
 
 #+BEGIN_SRC text
-Video Pose 0.44
+Video Pose 0.45
 #+END_SRC
 
 当前产品已经从早期概念原型演进为:

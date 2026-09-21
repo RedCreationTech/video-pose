@@ -101,6 +101,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-audit-degraded",
         action="store_true",
     )
+    parser.add_argument(
+        "--max-model-warmup-latency-ms",
+        type=float,
+        default=15000.0,
+    )
     return parser
 
 
@@ -133,6 +138,9 @@ def main() -> int:
         max_audit_write_errors=args.max_audit_write_errors,
         fail_on_audit_degraded=(
             not args.allow_audit_degraded
+        ),
+        max_model_warmup_latency_ms=(
+            args.max_model_warmup_latency_ms
         ),
     )
     monitor = SoakMonitor(thresholds)

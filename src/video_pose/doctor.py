@@ -350,6 +350,8 @@ def build_doctor_report(
         )
 
     required_modules = ["pydantic", "yaml", "cv2", "ultralytics"]
+    if cfg.model_warmup.enabled:
+        required_modules.append("numpy")
     if cfg.pose is not None and cfg.pose.enabled:
         required_modules.extend(
             ["mmpose", "mmengine", "mmcv"]

@@ -53,6 +53,17 @@ class RuntimeHealthSnapshot(BaseModel):
     max_open_fds: int = 0
 
 
+class ModelWarmupHealthSnapshot(BaseModel):
+    enabled: bool = False
+    status: str = "DISABLED"
+    latency_ms: float | None = None
+    detector_result_count: int = 0
+    pose_result_count: int = 0
+    error_type: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
 class SyncHealthSnapshot(BaseModel):
     reference_frames_total: int = 0
     emitted_total: int = 0
@@ -107,6 +118,7 @@ class StorageHealthSnapshot(BaseModel):
 class LiveHealthSnapshot(BaseModel):
     cameras: list[CameraHealthSnapshot] = Field(default_factory=list)
     runtime: RuntimeHealthSnapshot
+    model_warmup: ModelWarmupHealthSnapshot | None = None
     sync: SyncHealthSnapshot | None = None
     evidence: EvidenceHealthSnapshot | None = None
     audit: AuditHealthSnapshot | None = None

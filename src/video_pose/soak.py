@@ -42,6 +42,10 @@ class SoakThresholds(BaseModel):
     min_storage_free_gb: float = Field(default=5.0, ge=0.0)
     max_audit_write_errors: int = Field(default=0, ge=0)
     fail_on_audit_degraded: bool = True
+    max_model_warmup_latency_ms: float = Field(
+        default=15000.0,
+        gt=0.0,
+    )
 
 
 class SoakSample(BaseModel):
@@ -83,6 +87,8 @@ class SoakReport(BaseModel):
     min_storage_free_bytes: int | None
     audit_write_errors_total: int | None
     audit_degraded: bool | None
+    model_warmup_status: str | None
+    model_warmup_latency_ms: float | None
     passed: bool
     failures: list[str]
 
@@ -256,6 +262,14 @@ class SoakMonitor:
             else None
         )
 
+        warmup = latest.model_warmup
+        model_warmup_status = (
+            warmup.status if warmup is not None else None
+        )
+        model_warmup_latency_ms = (
+            warmup.latency_ms if warmup is not None else None
+        )
+
         failures: list[str] = []
         thresholds = self.thresholds
         if ready_ratio < thresholds.min_ready_ratio:
@@ -347,6 +361,22 @@ class SoakMonitor:
                     f"{max_abs_sync_drift:.6f} "
                     "> "
                     f"{thresholds.max_abs_sync_drift_ms_per_minute:.6f}"
+                )
+
+        if warmup is not None and warmup.enabled:
+            if warmup.status != "PASS":
+                failures.append(
+                    f"model_warmup_status={warmup.status}"
+                )
+            if (
+                warmup.latency_ms is not None
+                and warmup.latency_ms
+                > thresholds.max_model_warmup_latency_ms
+            ):
+                failures.append(
+                    "model_warmup_latency_ms="
+                    f"{warmup.latency_ms:.3f} "
+                    f"> {thresholds.max_model_warmup_latency_ms:.3f}"
                 )
 
         if audit is not None:
@@ -442,6 +472,8 @@ class SoakMonitor:
             min_storage_free_bytes=min_storage_bytes,
             audit_write_errors_total=audit_write_errors_total,
             audit_degraded=audit_degraded,
+            model_warmup_status=model_warmup_status,
+            model_warmup_latency_ms=model_warmup_latency_ms,
             passed=not failures,
             failures=failures,
         )
