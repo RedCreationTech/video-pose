@@ -287,6 +287,27 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
                 "video_pose_gpu_memory_reserved_max_mb",
                 runtime.max_gpu_reserved_mb,
             ),
+            _metric(
+                "video_pose_process_threads",
+                runtime.current_thread_count,
+            ),
+            _metric(
+                "video_pose_process_threads_max",
+                runtime.max_thread_count,
+            ),
         ]
     )
+    if runtime.current_open_fds is not None:
+        lines.extend(
+            [
+                _metric(
+                    "video_pose_process_open_fds",
+                    runtime.current_open_fds,
+                ),
+                _metric(
+                    "video_pose_process_open_fds_max",
+                    runtime.max_open_fds,
+                ),
+            ]
+        )
     return "\n".join(lines) + "\n"

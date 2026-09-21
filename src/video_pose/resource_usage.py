@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import resource
+import threading
 
 from pydantic import BaseModel
 
@@ -11,6 +12,8 @@ class ResourceSnapshot(BaseModel):
     rss_mb: float
     gpu_allocated_mb: float | None = None
     gpu_reserved_mb: float | None = None
+    thread_count: int = 0
+    open_fds: int | None = None
 
 
 def _rss_mb() -> float:
@@ -28,6 +31,29 @@ def _rss_mb() -> float:
     if os.uname().sysname == "Darwin":
         return value / (1024.0 * 1024.0)
     return value / 1024.0
+
+
+def _thread_count() -> int:
+    status_path = "/proc/self/status"
+    if os.path.exists(status_path):
+        try:
+            with open(status_path, encoding="utf-8") as handle:
+                for line in handle:
+                    if line.startswith("Threads:"):
+                        return int(line.split(":", 1)[1].strip())
+        except (OSError, ValueError):
+            pass
+    return threading.active_count()
+
+
+def _open_fd_count() -> int | None:
+    fd_path = "/proc/self/fd"
+    if not os.path.isdir(fd_path):
+        return None
+    try:
+        return len(os.listdir(fd_path))
+    except OSError:
+        return None
 
 
 def sample_process_resources() -> ResourceSnapshot:
@@ -53,4 +79,6 @@ def sample_process_resources() -> ResourceSnapshot:
         rss_mb=_rss_mb(),
         gpu_allocated_mb=gpu_allocated,
         gpu_reserved_mb=gpu_reserved,
+        thread_count=_thread_count(),
+        open_fds=_open_fd_count(),
     )

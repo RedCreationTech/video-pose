@@ -39,6 +39,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=512.0,
     )
     parser.add_argument(
+        "--max-thread-growth",
+        type=int,
+        default=16,
+    )
+    parser.add_argument(
+        "--max-open-fd-growth",
+        type=int,
+        default=32,
+    )
+    parser.add_argument(
         "--max-evidence-drop-ratio",
         type=float,
         default=0.20,
@@ -105,6 +115,8 @@ def main() -> int:
         max_processing_latency_ms=args.max_processing_latency_ms,
         max_processing_p99_ms=args.max_processing_p99_ms,
         max_rss_growth_mb=args.max_rss_growth_mb,
+        max_thread_growth=args.max_thread_growth,
+        max_open_fd_growth=args.max_open_fd_growth,
         max_evidence_drop_ratio=args.max_evidence_drop_ratio,
         max_evidence_errors=args.max_evidence_errors,
         fail_on_evidence_over_capacity=(

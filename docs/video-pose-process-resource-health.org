@@ -1,0 +1,79 @@
+#+TITLE: Video Pose Thread and File Descriptor Health
+#+SUBTITLE: Long-running Leak Detection for Camera Reconnect and Session Rotation
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Why
+
+RSS and GPU memory are not enough for a 72-hour Edge test.
+
+RTSP reconnect, GStreamer pipeline recreation and repeated Session start/stop can leak:
+
+- Python/native threads.
+- sockets.
+- pipes.
+- file descriptors.
+
+A process can keep stable RSS while approaching the operating-system FD limit.
+
+* 2. Resource sampling
+
+=sample_process_resources()= now returns:
+
+- rss_mb.
+- GPU allocated/reserved memory.
+- thread_count.
+- open_fds when the platform exposes =/proc/self/fd=.
+
+Thread count uses Linux =/proc/self/status= when available and falls back to Python active thread count.
+
+* 3. Runtime health
+
+Runtime health records current and maximum:
+
+#+BEGIN_SRC text
+current_thread_count
+max_thread_count
+current_open_fds
+max_open_fds
+#+END_SRC
+
+* 4. Prometheus
+
+#+BEGIN_SRC text
+video_pose_process_threads
+video_pose_process_threads_max
+video_pose_process_open_fds
+video_pose_process_open_fds_max
+#+END_SRC
+
+FD metrics are omitted on platforms where current open FD count is unavailable.
+
+* 5. Soak gates
+
+Default additional release gates:
+
+#+BEGIN_SRC text
+thread growth <= 16
+open FD growth <= 32
+#+END_SRC
+
+Growth uses the maximum observed value minus the initial value.
+
+The absolute numbers depend on camera backend and model stack, so the first site acceptance should record the normal steady-state baseline and tighten these values if appropriate.
+
+* 6. Typical diagnosis
+
+Thread growth with every Session rotation:
+
+- Session worker thread not joined.
+- WebSocket/background task leak.
+- model/runtime worker lifecycle bug.
+
+FD growth after camera reconnect:
+
+- old RTSP socket not closed.
+- old GStreamer pipeline not released.
+- evidence/audit file handle leak.
+
+These metrics should be inspected together with reconnect counters and Session rotation count.

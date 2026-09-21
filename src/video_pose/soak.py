@@ -14,6 +14,8 @@ class SoakThresholds(BaseModel):
     max_processing_latency_ms: float = Field(default=1000.0, gt=0.0)
     max_processing_p99_ms: float = Field(default=750.0, gt=0.0)
     max_rss_growth_mb: float = Field(default=512.0, ge=0.0)
+    max_thread_growth: int = Field(default=16, ge=0)
+    max_open_fd_growth: int = Field(default=32, ge=0)
     max_evidence_drop_ratio: float = Field(
         default=0.20,
         ge=0.0,
@@ -64,6 +66,12 @@ class SoakReport(BaseModel):
     max_rss_mb: float
     rss_growth_mb: float
     max_gpu_reserved_mb: float
+    initial_thread_count: int
+    max_thread_count: int
+    thread_growth: int
+    initial_open_fds: int | None
+    max_open_fds: int | None
+    open_fd_growth: int | None
     evidence_drop_ratio: float | None
     evidence_errors_total: int | None
     evidence_over_capacity: bool | None
@@ -150,6 +158,39 @@ class SoakMonitor:
                 for sample in self.samples
             ),
             default=0.0,
+        )
+
+        thread_values = [
+            sample.health.runtime.current_thread_count
+            for sample in self.samples
+        ]
+        initial_thread_count = (
+            thread_values[0] if thread_values else 0
+        )
+        max_thread_count = max(thread_values, default=0)
+        thread_growth = max(
+            0,
+            max_thread_count - initial_thread_count,
+        )
+
+        open_fd_values = [
+            sample.health.runtime.current_open_fds
+            for sample in self.samples
+            if sample.health.runtime.current_open_fds is not None
+        ]
+        initial_open_fds = (
+            open_fd_values[0] if open_fd_values else None
+        )
+        max_open_fds = (
+            max(open_fd_values) if open_fd_values else None
+        )
+        open_fd_growth = (
+            max(0, max_open_fds - initial_open_fds)
+            if (
+                max_open_fds is not None
+                and initial_open_fds is not None
+            )
+            else None
         )
 
         sync = latest.sync
@@ -261,6 +302,19 @@ class SoakMonitor:
                 f"rss_growth_mb={rss_growth:.3f} "
                 f"> {thresholds.max_rss_growth_mb:.3f}"
             )
+        if thread_growth > thresholds.max_thread_growth:
+            failures.append(
+                f"thread_growth={thread_growth} "
+                f"> {thresholds.max_thread_growth}"
+            )
+        if (
+            open_fd_growth is not None
+            and open_fd_growth > thresholds.max_open_fd_growth
+        ):
+            failures.append(
+                f"open_fd_growth={open_fd_growth} "
+                f"> {thresholds.max_open_fd_growth}"
+            )
         if sync is not None:
             if (
                 sync_miss_ratio is not None
@@ -371,6 +425,12 @@ class SoakMonitor:
             max_rss_mb=max_rss,
             rss_growth_mb=rss_growth,
             max_gpu_reserved_mb=max_gpu_reserved,
+            initial_thread_count=initial_thread_count,
+            max_thread_count=max_thread_count,
+            thread_growth=thread_growth,
+            initial_open_fds=initial_open_fds,
+            max_open_fds=max_open_fds,
+            open_fd_growth=open_fd_growth,
             evidence_drop_ratio=evidence_drop_ratio,
             evidence_errors_total=evidence_errors_total,
             evidence_over_capacity=evidence_over_capacity,

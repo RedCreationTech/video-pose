@@ -47,6 +47,10 @@ class RuntimeHealthSnapshot(BaseModel):
     gpu_allocated_mb: float | None = None
     gpu_reserved_mb: float | None = None
     max_gpu_reserved_mb: float = 0.0
+    current_thread_count: int = 0
+    max_thread_count: int = 0
+    current_open_fds: int | None = None
+    max_open_fds: int = 0
 
 
 class SyncHealthSnapshot(BaseModel):
@@ -160,6 +164,10 @@ class _RuntimeHealth:
     gpu_allocated_mb: float | None = None
     gpu_reserved_mb: float | None = None
     max_gpu_reserved_mb: float = 0.0
+    current_thread_count: int = 0
+    max_thread_count: int = 0
+    current_open_fds: int | None = None
+    max_open_fds: int = 0
 
 
 class LiveHealthRegistry:
@@ -305,6 +313,17 @@ class LiveHealthRegistry:
                     runtime.max_gpu_reserved_mb,
                     snapshot.gpu_reserved_mb,
                 )
+            runtime.current_thread_count = snapshot.thread_count
+            runtime.max_thread_count = max(
+                runtime.max_thread_count,
+                snapshot.thread_count,
+            )
+            runtime.current_open_fds = snapshot.open_fds
+            if snapshot.open_fds is not None:
+                runtime.max_open_fds = max(
+                    runtime.max_open_fds,
+                    snapshot.open_fds,
+                )
 
     def snapshot(self) -> LiveHealthSnapshot:
         with self._lock:
@@ -360,6 +379,12 @@ class LiveHealthRegistry:
                 gpu_allocated_mb=self._runtime.gpu_allocated_mb,
                 gpu_reserved_mb=self._runtime.gpu_reserved_mb,
                 max_gpu_reserved_mb=self._runtime.max_gpu_reserved_mb,
+                current_thread_count=(
+                    self._runtime.current_thread_count
+                ),
+                max_thread_count=self._runtime.max_thread_count,
+                current_open_fds=self._runtime.current_open_fds,
+                max_open_fds=self._runtime.max_open_fds,
             )
         ready = bool(cameras) and all(
             camera.state in {CameraState.ONLINE, CameraState.DEGRADED}
