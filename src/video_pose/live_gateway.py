@@ -4,12 +4,23 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from .live_health import LiveHealthRegistry
 from .live_video import LiveFrameSynchronizer
 from .video_manifest import ReplayManifest
 from .video_replay import SynchronizedFrameSet
+
+
+class LiveCameraReader(Protocol):
+    camera_id: str
+    uri: str
+
+    def open(self) -> None: ...
+
+    def read(self) -> tuple[float, Any]: ...
+
+    def close(self) -> None: ...
 
 
 class OpenCVLiveCamera:
@@ -71,7 +82,7 @@ class ThreadedLiveGateway:
         manifest: ReplayManifest,
         synchronizer: LiveFrameSynchronizer,
         *,
-        camera_factory: Callable[[str, str], OpenCVLiveCamera] | None = None,
+        camera_factory: Callable[[str, str], LiveCameraReader] | None = None,
         health: LiveHealthRegistry | None = None,
         reconnect_policy: ReconnectPolicy | None = None,
     ) -> None:
@@ -88,7 +99,7 @@ class ThreadedLiveGateway:
         self.reconnect_policy = reconnect_policy or ReconnectPolicy()
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
-        self._cameras: list[OpenCVLiveCamera] = []
+        self._cameras: list[LiveCameraReader] = []
         self._callback: Callable[[SynchronizedFrameSet], None] | None = None
 
     def start(
@@ -125,7 +136,7 @@ class ThreadedLiveGateway:
         self._threads.clear()
         self._cameras.clear()
 
-    def _run_camera(self, camera: OpenCVLiveCamera) -> None:
+    def _run_camera(self, camera: LiveCameraReader) -> None:
         delay = self.reconnect_policy.initial_delay_s
         while not self._stop.is_set():
             try:

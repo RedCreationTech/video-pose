@@ -1,0 +1,39 @@
+manifest: ../fixtures/replay/session-manifest.yaml
+rules: ../fixtures/rules/pick-place.yaml
+calibration: ../fixtures/calibration/planar-demo.yaml
+zones: ../fixtures/zones/pick-place-front.yaml
+
+detector:
+  weights: ../models/weights/tools-best.pt
+  confidence: 0.40
+  person_confidence: 0.50
+  object_confidence: 0.40
+  device: cuda:0
+
+pose:
+  enabled: true
+  config: ../configs/rtmpose-body.py
+  checkpoint: ../models/weights/rtmpose-body.pth
+  device: cuda:0
+
+live:
+  backend: gstreamer-native
+  rtsp_transport: tcp
+  latency_ms: 100
+  appsink_max_buffers: 1
+  appsink_drop: true
+  appsink_sync: false
+  native_timestamp_source: pts
+  native_pull_timeout_ms: 1000
+  native_ntp_sync: false
+  native_rfc7273_sync: false
+
+evidence:
+  enabled: true
+  root: ../output/evidence
+  pre_roll_ms: 3000
+  post_roll_ms: 3000
+  sample_interval_ms: 200
+  jpeg_quality: 70
+
+action_min_confidence: 0.75

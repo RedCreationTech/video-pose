@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from .gstreamer_capture import opencv_has_gstreamer
+from .native_gstreamer_capture import inspect_native_gstreamer
 from .runtime_config import (
     CaptureBackend,
     LoadedAnalysisConfig,
@@ -112,28 +113,56 @@ def _cuda_check(config: LoadedAnalysisConfig) -> DoctorCheck:
 
 
 def _gstreamer_check(config: LoadedAnalysisConfig) -> DoctorCheck | None:
-    if config.config.live.backend != CaptureBackend.GSTREAMER_OPENCV:
-        return None
-    try:
-        import cv2
-    except ImportError:
+    backend = config.config.live.backend
+    if backend == CaptureBackend.GSTREAMER_OPENCV:
+        try:
+            import cv2
+        except ImportError:
+            return DoctorCheck(
+                name="opencv-gstreamer",
+                status=CheckStatus.FAIL,
+                required=True,
+                detail="cv2 is not installed",
+            )
+
+        supported = opencv_has_gstreamer(cv2)
         return DoctorCheck(
             name="opencv-gstreamer",
-            status=CheckStatus.FAIL,
+            status=(
+                CheckStatus.PASS
+                if supported
+                else CheckStatus.FAIL
+            ),
             required=True,
-            detail="cv2 is not installed",
+            detail=(
+                "OpenCV GStreamer support is enabled"
+                if supported
+                else "OpenCV build reports GStreamer=NO"
+            ),
         )
 
-    supported = opencv_has_gstreamer(cv2)
+    if backend != CaptureBackend.GSTREAMER_NATIVE:
+        return None
+
+    try:
+        detail = inspect_native_gstreamer(
+            require_reference_timestamp=(
+                config.config.live.native_timestamp_source.value
+                == "reference"
+            )
+        )
+    except Exception as exc:
+        return DoctorCheck(
+            name="native-gstreamer",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail=str(exc),
+        )
     return DoctorCheck(
-        name="opencv-gstreamer",
-        status=CheckStatus.PASS if supported else CheckStatus.FAIL,
+        name="native-gstreamer",
+        status=CheckStatus.PASS,
         required=True,
-        detail=(
-            "OpenCV GStreamer support is enabled"
-            if supported
-            else "OpenCV build reports GStreamer=NO"
-        ),
+        detail=detail,
     )
 
 

@@ -1,0 +1,91 @@
+#+TITLE: Video Pose Native GStreamer Timestamp Backend
+#+SUBTITLE: GstAppSink, PTS and RFC7273 Reference Timestamp Modes
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Backend
+
+New capture backend:
+
+#+BEGIN_SRC yaml
+live:
+  backend: gstreamer-native
+#+END_SRC
+
+It uses PyGObject/GStreamer directly instead of OpenCV VideoCapture.
+
+* 2. Timestamp modes
+
+** arrival
+
+Uses local monotonic receive time.
+
+This matches the original live capture semantics.
+
+** pts
+
+Uses =GstBuffer.pts= to preserve media-clock frame spacing.
+
+Because a GStreamer pipeline can restart and PTS can reset, Video Pose rebases each PTS epoch onto a monotonic local timeline while preserving PTS deltas.
+
+If PTS is unavailable, this mode fails explicitly. It never silently mixes arrival timestamps into one camera stream.
+
+** reference
+
+Uses =GstReferenceTimestampMeta.timestamp= directly.
+
+This mode automatically enables:
+
+#+BEGIN_SRC text
+rfc7273-sync=true
+add-reference-timestamp-meta=true
+#+END_SRC
+
+If reference timestamp metadata is unavailable, frame read fails explicitly.
+
+Use this mode only when cameras/RTSP infrastructure provide a common RFC7273 reference clock.
+
+* 3. Appsink
+
+The pipeline uses:
+
+#+BEGIN_SRC text
+appsink name=video_pose_sink
+max-buffers=1
+drop=true
+sync=false
+#+END_SRC
+
+The reader uses =try-pull-sample= with a configurable timeout.
+
+* 4. Pixel mapping
+
+The native backend requests BGR raw video and maps GstBuffer memory into a NumPy array.
+
+It handles row padding by copying only the first =width * 3= bytes of each row.
+
+* 5. Doctor
+
+When =backend=gstreamer-native=, Doctor validates:
+
+- PyGObject/GI runtime.
+- GStreamer 1.x namespace.
+- NumPy.
+- rtspsrc/appsink/videoconvert elements.
+- RFC7273/reference timestamp properties when reference mode is selected.
+
+* 6. System packages
+
+Typical Linux edge nodes need system GStreamer/PyGObject packages in addition to the Python project.
+
+Exact package names depend on distribution. Validate the final image with =video-pose-doctor=.
+
+* 7. Recommended rollout
+
+Start with =pts= mode and inspect:
+
+- sync P99 skew.
+- sync miss ratio.
+- camera drift ms/min.
+
+Move to =reference= only after all four cameras are verified to expose a shared RFC7273 reference clock.

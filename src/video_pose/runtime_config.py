@@ -61,6 +61,13 @@ class IndustrialActionRuntimeConfig(BaseModel):
 class CaptureBackend(StrEnum):
     OPENCV = "opencv"
     GSTREAMER_OPENCV = "gstreamer-opencv"
+    GSTREAMER_NATIVE = "gstreamer-native"
+
+
+class CaptureTimestampSource(StrEnum):
+    ARRIVAL = "arrival"
+    PTS = "pts"
+    REFERENCE = "reference"
 
 
 class LiveCaptureRuntimeConfig(BaseModel):
@@ -71,6 +78,12 @@ class LiveCaptureRuntimeConfig(BaseModel):
     appsink_drop: bool = True
     appsink_sync: bool = False
     decoder_element: str | None = None
+    native_timestamp_source: CaptureTimestampSource = (
+        CaptureTimestampSource.PTS
+    )
+    native_pull_timeout_ms: int = Field(default=1000, ge=1)
+    native_ntp_sync: bool = False
+    native_rfc7273_sync: bool = False
 
 
 class EvidenceRuntimeConfig(BaseModel):

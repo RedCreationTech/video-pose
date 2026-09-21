@@ -7,7 +7,8 @@ from .gstreamer_capture import (
     OpenCVGStreamerLiveCamera,
     RTSPTransport,
 )
-from .live_gateway import OpenCVLiveCamera
+from .live_gateway import LiveCameraReader, OpenCVLiveCamera
+from .native_gstreamer_capture import NativeGStreamerLiveCamera
 from .runtime_config import CaptureBackend, LiveCaptureRuntimeConfig
 from .video_manifest import ReplayManifest
 
@@ -15,7 +16,7 @@ from .video_manifest import ReplayManifest
 def build_live_camera_factory(
     manifest: ReplayManifest,
     config: LiveCaptureRuntimeConfig,
-) -> Callable[[str, str], OpenCVLiveCamera]:
+) -> Callable[[str, str], LiveCameraReader]:
     if config.backend == CaptureBackend.OPENCV:
         return OpenCVLiveCamera
 
@@ -33,13 +34,35 @@ def build_live_camera_factory(
         decoder_element=config.decoder_element,
     )
 
-    def factory(camera_id: str, uri: str) -> OpenCVLiveCamera:
+    if config.backend == CaptureBackend.GSTREAMER_OPENCV:
+        def factory(camera_id: str, uri: str) -> LiveCameraReader:
+            camera = camera_by_id[camera_id]
+            return OpenCVGStreamerLiveCamera(
+                camera_id,
+                uri,
+                codec=camera.codec,
+                options=options,
+            )
+
+        return factory
+
+    def native_factory(
+        camera_id: str,
+        uri: str,
+    ) -> LiveCameraReader:
         camera = camera_by_id[camera_id]
-        return OpenCVGStreamerLiveCamera(
+        return NativeGStreamerLiveCamera(
             camera_id,
             uri,
             codec=camera.codec,
             options=options,
+            timestamp_source=config.native_timestamp_source,
+            pull_timeout_ms=config.native_pull_timeout_ms,
+            ntp_sync=config.native_ntp_sync,
+            rfc7273_sync=(
+                config.native_rfc7273_sync
+                or config.native_timestamp_source.value == "reference"
+            ),
         )
 
-    return factory
+    return native_factory
