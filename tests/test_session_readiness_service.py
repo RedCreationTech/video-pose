@@ -6,6 +6,7 @@ from video_pose.live_health import (
     RuntimeHealthSnapshot,
 )
 from video_pose.live_service import create_managed_live_app
+from video_pose.session_controller import SessionStartRequest
 from video_pose.session_readiness import (
     SessionNotReadyError,
     SessionReadinessCheck,
