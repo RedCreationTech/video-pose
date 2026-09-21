@@ -1,0 +1,76 @@
+#+TITLE: Video Pose Optional OpenTelemetry OTLP Trace Export
+#+SUBTITLE: Non-critical OTLP/HTTP Export Using Existing W3C Trace IDs
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Purpose
+
+Video Pose already propagates W3C =traceparent= and stores Session trace_id.
+
+The optional OpenTelemetry bridge exports child spans without making Collector availability part of the compliance path.
+
+* 2. Dependency Boundary
+
+The base Edge runtime does not require the OpenTelemetry SDK.
+
+Optional install:
+
+#+BEGIN_SRC sh
+pip install -e '.[observability]'
+#+END_SRC
+
+The implementation uses the OpenTelemetry Python SDK, BatchSpanProcessor and OTLP HTTP/protobuf trace exporter.
+
+* 3. Configuration
+
+#+BEGIN_SRC text
+VIDEO_POSE_OTEL_ENABLED=1
+OTEL_SERVICE_NAME=video-pose-edge
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+#+END_SRC
+
+The Edge exporter is intentionally HTTP/protobuf only.
+
+* 4. Trace Relationship
+
+The existing Video Pose W3C TraceContext remains authoritative for API and Audit contracts.
+
+The OTLP bridge creates exported child spans using the same trace_id and current Video Pose span_id as the parent.
+
+#+BEGIN_SRC text
+Video Pose trace_id
+       |
+       +--> structured logs
+       +--> metadata.json
+       +--> realtime payload
+       +--> OTLP child spans
+#+END_SRC
+
+* 5. Exported Spans
+
+Current span names:
+
+- =http.request=.
+- =session.started=.
+- =session.quality_violation=.
+- =session.finished=.
+- =persistence.reconciled=.
+
+HTTP span attributes include method, path and response status.
+
+Query strings, Authorization headers, RTSP URIs and bearer tokens are not attached.
+
+* 6. Failure Semantics
+
+Telemetry is non-critical.
+
+If optional packages are missing, exporter setup fails, Collector is unavailable or span export fails, Video Pose continues the compliance runtime.
+
+The local safety chain remains:
+
+- immutable Audit.
+- Prometheus metrics.
+- structured JSON logs.
+- W3C trace IDs.
+
+OTLP never participates in PASS/FAIL or Readiness.

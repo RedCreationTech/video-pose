@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-pose"
-version = "0.46.0"
+version = "0.47.0"
 description = "Multi-view action compliance detection core for Video Pose"
 readme = {file = "README.org", content-type = "text/plain"}
 requires-python = ">=3.11"
@@ -45,6 +45,11 @@ mmpose = [
 ]
 gstreamer-native = [
   "numpy>=1.26,<3",
+]
+observability = [
+  "opentelemetry-api>=1.25,<2",
+  "opentelemetry-sdk>=1.25,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.25,<2",
 ]
 
 [project.scripts]

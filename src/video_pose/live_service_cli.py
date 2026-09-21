@@ -12,6 +12,10 @@ from .persistent_session_controller import PersistentLiveSessionController
 from .resilient_store import ResilientSessionStore
 from .runtime_config import load_analysis_config
 from .structured_log import configure_logging, log_event
+from .telemetry import (
+    configure_telemetry_from_environment,
+    shutdown_telemetry,
+)
 
 LOGGER = logging.getLogger("video_pose.service")
 
@@ -61,6 +65,7 @@ def main() -> int:
         log_format=args.log_format,
         level=args.log_level,
     )
+    telemetry = configure_telemetry_from_environment()
     log_event(
         LOGGER,
         "service_starting",
@@ -70,6 +75,8 @@ def main() -> int:
         database_configured=bool(args.database_url),
         auth_enabled=args.auth_enabled,
         reconcile_on_start=args.reconcile_on_start,
+        otel_enabled=telemetry.enabled,
+        otel_configured=telemetry.configured,
     )
     try:
         import uvicorn
@@ -144,13 +151,16 @@ def main() -> int:
             else "arrival"
         ),
     )
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        log_level=args.log_level.lower(),
-        log_config=None,
-    )
+    try:
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level=args.log_level.lower(),
+            log_config=None,
+        )
+    finally:
+        shutdown_telemetry()
     return 0
 
 

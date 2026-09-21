@@ -41,6 +41,7 @@ from .session_runtime import (
 from .session_store import SessionStore
 from .storage_health import sample_runtime_storage
 from .structured_log import log_event
+from .telemetry import emit_telemetry_span
 from .trace_context import (
     activate_trace_context,
     current_trace_id,
@@ -266,6 +267,15 @@ class PersistentLiveSessionController:
                 operation=state.operation,
                 rule_set_version=rule_set.version,
             )
+            emit_telemetry_span(
+                "session.started",
+                attributes={
+                    "session.id": session_id,
+                    "workstation.id": state.workstation_id,
+                    "operation": state.operation,
+                    "rule_set.version": rule_set.version,
+                },
+            )
             return state.model_copy(deep=True)
 
     def stop(self, session_id: str) -> RuleSessionUpdate:
@@ -407,6 +417,15 @@ class PersistentLiveSessionController:
             skipped_count=report.skipped_count,
             failed_count=report.failed_count,
             incomplete_count=report.incomplete_count,
+        )
+        emit_telemetry_span(
+            "persistence.reconciled",
+            attributes={
+                "repaired_count": report.repaired_count,
+                "skipped_count": report.skipped_count,
+                "failed_count": report.failed_count,
+                "incomplete_count": report.incomplete_count,
+            },
         )
         return report.model_dump(mode="json")
 
@@ -637,6 +656,16 @@ class PersistentLiveSessionController:
                     violation_type=violation.type,
                     severity=violation.severity.value,
                 )
+                emit_telemetry_span(
+                    "session.quality_violation",
+                    attributes={
+                        "session.id": state.session_id,
+                        "rule.id": violation.rule_id,
+                        "event.id": violation.event_id,
+                        "violation.type": violation.type,
+                        "violation.severity": violation.severity.value,
+                    },
+                )
         try:
             self.audit.append_payload(
                 state.session_id,
@@ -844,5 +873,15 @@ class PersistentLiveSessionController:
                 passed=final.result.passed,
                 score=final.result.score,
                 violation_count=len(final.result.violations),
+            )
+            emit_telemetry_span(
+                "session.finished",
+                attributes={
+                    "session.id": session_id,
+                    "session.status": status.value,
+                    "session.passed": final.result.passed,
+                    "session.score": final.result.score,
+                    "violation.count": len(final.result.violations),
+                },
             )
             return final

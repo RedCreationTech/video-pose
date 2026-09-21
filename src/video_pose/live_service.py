@@ -15,6 +15,7 @@ from .incomplete_recovery import IncompleteRecoveryRequest
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
 from .session_controller import SessionStartRequest
+from .telemetry import telemetry_span
 from .session_readiness import SessionNotReadyError
 from .trace_context import (
     activate_trace_context,
@@ -473,7 +474,20 @@ def _install_trace_middleware(app: Any) -> None:
         )
         context = new_trace_context(parent)
         with use_trace_context(context):
-            response = await call_next(request)
+            with telemetry_span(
+                "http.request",
+                trace_context=context,
+                attributes={
+                    "http.request.method": request.method,
+                    "url.path": request.url.path,
+                },
+            ) as span:
+                response = await call_next(request)
+                if span is not None:
+                    span.set_attribute(
+                        "http.response.status_code",
+                        response.status_code,
+                    )
         response.headers["traceparent"] = format_traceparent(
             context
         )
