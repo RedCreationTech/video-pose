@@ -1,0 +1,65 @@
+#+TITLE: Video Pose Multi-view Evidence Timeline
+#+SUBTITLE: Time-aligned Four-camera Violation Review in the Edge Console
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Problem
+
+A violation Evidence package contains multiple JPEG samples per camera across the pre-roll and post-roll window.
+
+Showing only the first image from every camera is useful as a thumbnail, but it does not support temporal review.
+
+* 2. Timeline
+
+Console 0.54 adds a percentage slider for each Evidence package.
+
+#+BEGIN_SRC text
+PRE  [---------|---------]  50%
+             target time
+#+END_SRC
+
+The target timestamp is calculated from:
+
+#+BEGIN_SRC text
+normalized_start_ms
+normalized_end_ms
+#+END_SRC
+
+* 3. Multi-view Frame Selection
+
+For the selected target timestamp, the Console groups Evidence images by camera and selects the frame with the minimum absolute time distance.
+
+#+BEGIN_SRC text
+target T
+  |
+  +--> FRONT closest frame
+  +--> REAR closest frame
+  +--> LEFT closest frame
+  +--> RIGHT closest frame
+#+END_SRC
+
+This keeps the four displayed views approximately synchronized during review.
+
+* 4. Bounded Network Usage
+
+Dragging the slider is debounced.
+
+One selected frame per camera is fetched for each settled slider position.
+
+The Console does not preload all Evidence JPEG files.
+
+* 5. Race Handling
+
+Each Evidence package has a render version.
+
+If a slower request for an older slider position finishes after a newer request, the stale result is discarded.
+
+This prevents the UI from visually jumping backward in time.
+
+* 6. Authentication
+
+Every frame still uses authenticated =fetch= with the Bearer Token in the Authorization header.
+
+The browser displays temporary Blob URLs only.
+
+No long-lived credential enters an image URL.

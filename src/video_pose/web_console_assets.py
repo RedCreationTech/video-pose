@@ -194,7 +194,7 @@ input{color:var(--text);background:#0a121a;border:1px solid #31465b;border-radiu
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-box{background:#0b141d;border:1px solid #233649;border-radius:7px;padding:10px;color:#c6d2dd;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px}.check-list,.compact-list,.review-list{display:grid;gap:7px}.check-row,.compact-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;padding:8px;border:1px solid #24384b;border-radius:6px;background:#0d161f}.check-name{font-weight:650}.check-detail{color:var(--muted);font-size:11px;overflow-wrap:anywhere}.indicator{width:9px;height:9px;border-radius:50%;margin-top:4px;background:var(--muted)}.indicator.good{background:var(--green);box-shadow:0 0 8px rgba(71,212,135,.5)}.indicator.bad{background:var(--red);box-shadow:0 0 8px rgba(255,109,118,.45)}
 .split-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}.health-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.health-item{background:#0d161f;border:1px solid #24384b;border-radius:6px;padding:9px}.health-item span{display:block;color:var(--muted);font-size:11px}.health-item strong{display:block;margin-top:3px;overflow-wrap:anywhere}
 .review-row{border:1px solid #2a3e51;border-radius:7px;background:#0d161f;padding:10px;display:grid;grid-template-columns:1fr auto;gap:12px}.review-actions{display:flex;gap:6px;align-items:center}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.empty-state{color:var(--muted);padding:15px;text-align:center}
-.operations-lower{margin-top:12px}.history-list{display:grid;gap:7px;max-height:360px;overflow:auto}.history-row{border:1px solid #26394c;border-radius:7px;background:#0d161f;padding:9px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.history-row button{padding:6px 9px}.history-title{font-size:12px;font-weight:700}.history-meta{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.evidence-panel{margin-top:12px}.evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:10px;margin-top:10px}.evidence-card{border:1px solid #26394c;border-radius:8px;background:#0d161f;padding:10px}.evidence-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}.evidence-images{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.evidence-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:#111b26;border:1px solid #233649;border-radius:5px}.evidence-caption{font-size:10px;color:var(--muted);margin-top:3px}.danger-text{color:var(--red)}
+.operations-lower{margin-top:12px}.history-list{display:grid;gap:7px;max-height:360px;overflow:auto}.history-row{border:1px solid #26394c;border-radius:7px;background:#0d161f;padding:9px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.history-row button{padding:6px 9px}.history-title{font-size:12px;font-weight:700}.history-meta{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.evidence-panel{margin-top:12px}.evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:10px;margin-top:10px}.evidence-card{border:1px solid #26394c;border-radius:8px;background:#0d161f;padding:10px}.evidence-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}.evidence-timeline{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:10px 0}.evidence-timeline input[type="range"]{width:100%;accent-color:var(--cyan);padding:0;border:0;background:transparent}.timeline-edge,.timeline-time{font-size:10px;color:var(--muted);white-space:nowrap}.timeline-time{min-width:72px;text-align:right}.evidence-images{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.evidence-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:#111b26;border:1px solid #233649;border-radius:5px}.evidence-caption{font-size:10px;color:var(--muted);margin-top:3px}.danger-text{color:var(--red)}
 footer{max-width:1600px;margin:0 auto;padding:14px 22px 24px;display:flex;justify-content:space-between;color:#64788d;font-size:11px}
 @media(max-width:1050px){.camera-grid,.kpi-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
 @media(max-width:650px){.topbar{position:static;padding:14px;align-items:flex-start;gap:10px}.badges{flex-wrap:wrap;justify-content:flex-end}.layout{padding:10px}.camera-grid,.kpi-grid,.evidence-grid{grid-template-columns:1fr}.form-row{align-items:stretch;flex-direction:column}.split-list,.health-grid{grid-template-columns:1fr}.review-row,.history-row{grid-template-columns:1fr}}"""
@@ -209,6 +209,7 @@ var state = {
   refreshing: false,
   snapshots: new Map(),
   evidenceUrls: new Map(),
+  evidenceRenderVersions: new Map(),
   selectedSessionId: null,
   socket: null,
   realtimeRetry: null,
@@ -781,24 +782,144 @@ function renderEvidence(manifests) {
       "\nStep " + manifest.step_code +
       " · Event " + manifest.event_id
     ));
+
+    var timeline = makeNode("div", "evidence-timeline");
+    timeline.appendChild(makeNode("span", "timeline-edge", "PRE"));
+    var slider = makeNode("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "100";
+    slider.step = "1";
+    slider.value = "50";
+    slider.setAttribute(
+      "aria-label",
+      "Evidence timeline for " + manifest.evidence_id
+    );
+    timeline.appendChild(slider);
+    var timeLabel = makeNode("span", "timeline-time mono", "-");
+    timeline.appendChild(timeLabel);
+    card.appendChild(timeline);
+
     var images = makeNode("div", "evidence-images");
     card.appendChild(images);
     target.appendChild(card);
-    loadEvidencePreviewImages(manifest, images);
+
+    var timer = null;
+    slider.addEventListener("input", function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () {
+        renderEvidenceMoment(
+          manifest,
+          Number(slider.value),
+          images,
+          timeLabel
+        );
+      }, 70);
+    });
+    renderEvidenceMoment(manifest, 50, images, timeLabel);
   });
 }
-async function loadEvidencePreviewImages(manifest, target) {
-  var byCamera = new Map();
+function closestEvidenceImages(manifest, targetMs) {
+  var grouped = new Map();
   (manifest.images || []).forEach(function (image) {
-    if (!byCamera.has(image.camera_id)) byCamera.set(image.camera_id, image);
+    if (!grouped.has(image.camera_id)) grouped.set(image.camera_id, []);
+    grouped.get(image.camera_id).push(image);
   });
-  var tasks = [];
-  byCamera.forEach(function (image, cameraId) {
-    tasks.push(loadEvidenceImage(manifest, image, cameraId, target));
+  var selected = [];
+  grouped.forEach(function (images, cameraId) {
+    var closest = null;
+    var distance = Number.POSITIVE_INFINITY;
+    images.forEach(function (image) {
+      var current = Math.abs(Number(image.timestamp_ms) - targetMs);
+      if (current < distance) {
+        distance = current;
+        closest = image;
+      }
+    });
+    if (closest) {
+      selected.push({
+        cameraId: cameraId,
+        image: closest
+      });
+    }
   });
-  await Promise.all(tasks);
+  selected.sort(function (left, right) {
+    return left.cameraId.localeCompare(right.cameraId);
+  });
+  return selected;
 }
-async function loadEvidenceImage(manifest, image, cameraId, target) {
+async function renderEvidenceMoment(
+  manifest,
+  percentage,
+  target,
+  timeLabel
+) {
+  var start = Number(manifest.normalized_start_ms || 0);
+  var end = Number(manifest.normalized_end_ms || start);
+  var targetMs = start + (end - start) * percentage / 100;
+  timeLabel.textContent =
+    Math.round(targetMs) + " ms · " + String(Math.round(percentage)) + "%";
+
+  var version = (state.evidenceRenderVersions.get(manifest.evidence_id) || 0) + 1;
+  state.evidenceRenderVersions.set(manifest.evidence_id, version);
+  target.className = "evidence-images empty-state";
+  target.textContent = "加载 " + Math.round(targetMs) + " ms ...";
+
+  var selections = closestEvidenceImages(manifest, targetMs);
+  var results = await Promise.all(
+    selections.map(async function (selection) {
+      var item = await fetchEvidenceImage(
+        manifest,
+        selection.image,
+        selection.cameraId
+      );
+      return {
+        cameraId: selection.cameraId,
+        image: selection.image,
+        blob: item
+      };
+    })
+  );
+
+  if (
+    state.evidenceRenderVersions.get(manifest.evidence_id) !== version
+  ) {
+    return;
+  }
+
+  clearNode(target);
+  target.className = "evidence-images";
+  results.forEach(function (result) {
+    if (!result.blob) return;
+    var key = manifest.evidence_id + ":" + result.cameraId;
+    var old = state.evidenceUrls.get(key);
+    if (old) URL.revokeObjectURL(old);
+    var url = URL.createObjectURL(result.blob);
+    state.evidenceUrls.set(key, url);
+
+    var wrapper = makeNode("div");
+    var img = makeNode("img", "evidence-thumb");
+    img.src = url;
+    img.alt = result.cameraId + " evidence";
+    wrapper.appendChild(img);
+    wrapper.appendChild(makeNode(
+      "div",
+      "evidence-caption mono",
+      result.cameraId + " · " +
+      Math.round(result.image.timestamp_ms) + " ms"
+    ));
+    target.appendChild(wrapper);
+  });
+  if (!target.childNodes.length) {
+    target.className = "evidence-images empty-state";
+    target.textContent = "该时间点无可读取证据帧.";
+  }
+}
+async function fetchEvidenceImage(
+  manifest,
+  image,
+  cameraId
+) {
   try {
     var path =
       "/api/v1/sessions/" + encodeURIComponent(manifest.session_id) +
@@ -809,31 +930,18 @@ async function loadEvidenceImage(manifest, image, cameraId, target) {
       headers: authHeaders(false),
       cache: "no-store"
     });
-    if (!response.ok) return;
-    var blob = await response.blob();
-    var url = URL.createObjectURL(blob);
-    var key = manifest.evidence_id + ":" + cameraId;
-    var old = state.evidenceUrls.get(key);
-    if (old) URL.revokeObjectURL(old);
-    state.evidenceUrls.set(key, url);
-    var wrapper = makeNode("div");
-    var img = makeNode("img", "evidence-thumb");
-    img.src = url;
-    img.alt = cameraId + " evidence";
-    wrapper.appendChild(img);
-    wrapper.appendChild(makeNode(
-      "div",
-      "evidence-caption mono",
-      cameraId + " · " + Math.round(image.timestamp_ms) + " ms"
-    ));
-    target.appendChild(wrapper);
-  } catch (_) {}
+    if (!response.ok) return null;
+    return response.blob();
+  } catch (_) {
+    return null;
+  }
 }
 function revokeEvidenceUrls() {
   state.evidenceUrls.forEach(function (url) {
     URL.revokeObjectURL(url);
   });
   state.evidenceUrls.clear();
+  state.evidenceRenderVersions.clear();
 }
 async function recoverIncomplete(sessionId) {
   var reason = window.prompt(
