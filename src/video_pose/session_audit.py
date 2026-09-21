@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 def _utc_now() -> str:
@@ -26,6 +26,18 @@ class SessionAuditMetadata(BaseModel):
     pose_checkpoint: str | None = None
     planar_calibration: str | None = None
     perspective_calibration: str | None = None
+    capture_backend: str | None = None
+    timestamp_source: str | None = None
+    sync_tolerance_ms: float | None = None
+    camera_clock_offsets_ms: dict[str, float] = Field(
+        default_factory=dict
+    )
+    config_sha256: str | None = None
+    manifest_sha256: str | None = None
+    rules_sha256: str | None = None
+    zones_sha256: str | None = None
+    planar_calibration_sha256: str | None = None
+    perspective_calibration_sha256: str | None = None
 
 
 class SessionAuditWriter:

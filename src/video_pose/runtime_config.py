@@ -86,6 +86,14 @@ class LiveCaptureRuntimeConfig(BaseModel):
     native_rfc7273_sync: bool = False
 
 
+def effective_capture_timestamp_source(
+    config: LiveCaptureRuntimeConfig,
+) -> CaptureTimestampSource:
+    if config.backend == CaptureBackend.GSTREAMER_NATIVE:
+        return config.native_timestamp_source
+    return CaptureTimestampSource.ARRIVAL
+
+
 class EvidenceRuntimeConfig(BaseModel):
     enabled: bool = False
     root: str = "../output/evidence"

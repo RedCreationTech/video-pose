@@ -13,7 +13,10 @@ from .live_evidence import LiveEvidenceBuffer, OpenCVJPEGEncoder
 from .live_gateway import ThreadedLiveGateway
 from .live_health import LiveHealthRegistry, LiveHealthSnapshot
 from .live_video import LiveFrameSynchronizer, MemoryFrameStore
-from .runtime_config import LoadedAnalysisConfig
+from .runtime_config import (
+    LoadedAnalysisConfig,
+    effective_capture_timestamp_source,
+)
 from .video_manifest import ReplayManifest, load_manifest
 from .video_replay import SynchronizedFrameSet
 
@@ -29,12 +32,16 @@ class PersistentCameraHub:
         health: LiveHealthRegistry,
         gateway: ThreadedLiveGateway,
         evidence: AsyncLiveEvidenceRecorder | None = None,
+        capture_backend: str = "unknown",
+        timestamp_source: str = "arrival",
     ) -> None:
         self.manifest = manifest
         self.frame_store = frame_store
         self.health = health
         self.gateway = gateway
         self.evidence = evidence
+        self.capture_backend = capture_backend
+        self.timestamp_source = timestamp_source
         self._lock = threading.RLock()
         self._subscribers: dict[
             str,
@@ -113,6 +120,8 @@ class PersistentCameraHub:
                     "position": camera.position.value,
                     "codec": camera.codec,
                     "enabled": camera.enabled,
+                    "capture_backend": self.capture_backend,
+                    "timestamp_source": self.timestamp_source,
                     "state": (
                         health.state.value
                         if health is not None
@@ -344,4 +353,8 @@ def build_persistent_camera_hub(
         health=health,
         gateway=gateway,
         evidence=evidence,
+        capture_backend=config.config.live.backend.value,
+        timestamp_source=effective_capture_timestamp_source(
+            config.config.live
+        ).value,
     )

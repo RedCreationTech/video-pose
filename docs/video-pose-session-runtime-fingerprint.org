@@ -1,0 +1,69 @@
+#+TITLE: Video Pose Session Runtime Fingerprint
+#+SUBTITLE: Timestamp Basis, Rule/Calibration Hashes and Reproducible Audit
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+A compliance result must be reproducible.
+
+The audit now records not only model/config paths, but also the time basis and byte-level hashes of critical small configuration artifacts.
+
+* 2. Session metadata
+
+Each new Session records:
+
+- capture_backend.
+- timestamp_source.
+- sync_tolerance_ms.
+- camera_clock_offsets_ms.
+- config_sha256.
+- manifest_sha256.
+- rules_sha256.
+- zones_sha256.
+- planar_calibration_sha256.
+- perspective_calibration_sha256.
+
+Existing detector/pose model paths remain recorded.
+
+* 3. Timestamp source
+
+For OpenCV and OpenCV/GStreamer backends:
+
+#+BEGIN_SRC text
+timestamp_source = arrival
+#+END_SRC
+
+For native GStreamer:
+
+#+BEGIN_SRC text
+timestamp_source = arrival | pts | reference
+#+END_SRC
+
+This makes it possible to tell whether a historical 3D/action result used local arrival timing, media PTS or RFC7273 reference timestamps.
+
+* 4. SHA-256 policy
+
+Only small critical runtime artifacts are hashed synchronously at Session start:
+
+- analysis config YAML.
+- camera manifest YAML.
+- rules YAML.
+- zones YAML.
+- planar calibration.
+- perspective calibration.
+
+Large detector and pose weight files are not hashed in the Session start path. Their configured paths remain in metadata. Model artifact hashing can be added later as a build/release manifest without delaying operator start.
+
+* 5. Camera catalog
+
+=/api/v1/cameras= now includes:
+
+- capture_backend.
+- timestamp_source.
+
+RTSP URI is intentionally not exposed because it can contain credentials.
+
+* 6. Reindex compatibility
+
+New metadata fields are optional. Older audit directories continue to validate and reindex normally.

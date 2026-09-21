@@ -14,6 +14,7 @@ from .live_health import LiveHealthRegistry, LiveHealthSnapshot
 from .live_payload import live_update_payload
 from .live_runtime import LiveAnalysisRuntime, LiveAnalysisUpdate, build_live_runtime
 from .realtime_rules import RuleSessionUpdate
+from .runtime_fingerprint import build_runtime_fingerprint
 from .runtime_config import LoadedAnalysisConfig
 from .session_audit import SessionAuditMetadata, SessionAuditWriter
 from .session_store import SessionStore
@@ -102,6 +103,10 @@ class LiveSessionController:
                 status=ManagedSessionStatus.RUNNING,
                 started_at=started_at,
             )
+            fingerprint = build_runtime_fingerprint(
+                self.config,
+                manifest,
+            )
             metadata = SessionAuditMetadata(
                 session_id=session_id,
                 operator_id=request.operator_id,
@@ -127,6 +132,7 @@ class LiveSessionController:
                     if self.config.config.triangulation.enabled
                     else None
                 ),
+                **fingerprint.model_dump(mode="python"),
             )
             self.audit.start(metadata)
             if self.repository is not None:

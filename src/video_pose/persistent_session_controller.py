@@ -12,6 +12,7 @@ from .live_runtime import LiveAnalysisUpdate
 from .model_pool import PersistentModelPool
 from .persistent_camera import PersistentCameraHub
 from .realtime_rules import RuleSessionUpdate
+from .runtime_fingerprint import build_runtime_fingerprint
 from .runtime_config import LoadedAnalysisConfig
 from .session_audit import SessionAuditMetadata, SessionAuditWriter
 from .session_controller import (
@@ -122,6 +123,10 @@ class PersistentLiveSessionController:
                 status=ManagedSessionStatus.RUNNING,
                 started_at=started_at,
             )
+            fingerprint = build_runtime_fingerprint(
+                self.config,
+                self.hub.manifest,
+            )
             metadata = SessionAuditMetadata(
                 session_id=session_id,
                 operator_id=request.operator_id,
@@ -147,6 +152,7 @@ class PersistentLiveSessionController:
                     if self.config.config.triangulation.enabled
                     else None
                 ),
+                **fingerprint.model_dump(mode="python"),
             )
             self.audit.start(metadata)
             if self.repository is not None:
