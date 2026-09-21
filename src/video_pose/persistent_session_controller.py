@@ -12,8 +12,8 @@ from .live_runtime import LiveAnalysisUpdate
 from .model_pool import PersistentModelPool
 from .persistent_camera import PersistentCameraHub
 from .realtime_rules import RuleSessionUpdate
-from .runtime_fingerprint import build_runtime_fingerprint
 from .runtime_config import LoadedAnalysisConfig
+from .runtime_fingerprint import build_runtime_fingerprint
 from .session_audit import SessionAuditMetadata, SessionAuditWriter
 from .session_controller import (
     ManagedSessionState,
