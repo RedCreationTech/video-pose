@@ -1,0 +1,68 @@
+#+TITLE: Video Pose Production-shaped Managed Soak
+#+SUBTITLE: Persistent Cameras, Persistent Models and Repeated Session Rotation
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Why
+
+Legacy =video-pose-soak= validates one live runtime.
+
+Production service now uses:
+
+#+BEGIN_SRC text
+PersistentCameraHub
+PersistentModelPool
+        |
+        +--> Session 1
+        +--> Session 2
+        +--> Session 3
+        ...
+#+END_SRC
+
+Long-running validation must exercise the same lifecycle.
+
+* 2. Command
+
+#+BEGIN_SRC sh
+video-pose-managed-soak \
+  --config configs/live-gstreamer-demo.yaml \
+  --duration-hours 72 \
+  --rotation-seconds 3600 \
+  --sample-seconds 60 \
+  --warmup-seconds 30 \
+  --audit-dir output/managed-soak \
+  --output output/managed-soak-72h.json
+#+END_SRC
+
+* 3. What it exercises
+
+- Camera Hub is started once.
+- YOLO/RTMPose Model Pool is loaded once.
+- Sessions start/stop repeatedly.
+- Each Session gets fresh rule/action state.
+- Cameras and models remain resident across Session boundaries.
+- Evidence worker and retention remain resident.
+- Health is sampled continuously across rotations.
+
+* 4. Additional release gates
+
+Default Session gates:
+
+- session start errors = 0.
+- session stop errors = 0.
+- max session start latency <= 5000 ms.
+- max session stop latency <= 5000 ms.
+- completed sessions >= 1.
+- model pool must remain loaded.
+
+All existing camera, inference, resource and Evidence Soak gates remain active.
+
+* 5. Recommended acceptance
+
+For a production candidate:
+
+- 72 hours.
+- hourly Session rotation.
+- at least one planned camera disconnect/reconnect.
+- at least one reviewed violation with evidence.
+- zero unrecoverable Session transition failures.
