@@ -1,0 +1,93 @@
+#+TITLE: Video Pose Web Console Operations Extension
+#+SUBTITLE: Session History, Evidence Explorer and Crash Recovery
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Scope
+
+Video Pose 0.52 extends the zero-build Edge Console with the post-operation workflow.
+
+New functions:
+
+- recent Session history.
+- complete stored Session inspection.
+- Evidence Explorer.
+- incomplete Audit Session discovery.
+- controlled ABORTED recovery.
+
+* 2. Session History
+
+The Console reads:
+
+#+BEGIN_SRC text
+GET /api/v1/sessions?limit=30
+GET /api/v1/sessions/{session_id}
+#+END_SRC
+
+The history list displays status, operator, score, PASS/FAIL and start time.
+
+Selecting a Session loads its Actions, Steps, Violations and Release Fingerprint summary.
+
+* 3. Evidence Explorer
+
+After selecting a Session:
+
+#+BEGIN_SRC text
+GET /api/v1/sessions/{session_id}/evidence
+#+END_SRC
+
+For each Evidence package the Console shows:
+
+- COMPLETE/PARTIAL.
+- rule/step/event identity.
+- review status.
+- one preview image per available camera.
+
+Images are loaded through the protected Evidence file API with the Authorization header.
+
+The token is never appended to image URLs.
+
+* 4. Evidence Data Volume
+
+The Console intentionally loads only one preview image per camera.
+
+It does not automatically download the entire pre/post-roll evidence sequence.
+
+This keeps workstation bandwidth and browser memory bounded.
+
+* 5. Crash Recovery
+
+Incomplete Audit Sessions are listed through:
+
+#+BEGIN_SRC text
+GET /api/v1/runtime/persistence/incomplete-sessions
+#+END_SRC
+
+Only a principal with =persistence:repair= can activate the recovery button.
+
+Recovery requires:
+
+1. explicit human reason.
+2. explicit confirmation.
+3. protected POST request.
+
+The backend still enforces the existing rule:
+
+#+BEGIN_SRC text
+final status = ABORTED
+score = 0
+passed = false
+SYSTEM-QUALITY-RECOVERY appended
+#+END_SRC
+
+The Console cannot convert an incomplete Session into COMPLETED.
+
+* 6. Security
+
+Session and recovery content is rendered with =textContent=.
+
+Evidence and camera images are displayed from temporary Blob URLs.
+
+All Blob URLs are revoked when replaced or when the page is unloaded.
+
+No new unauthenticated business API is introduced.

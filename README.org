@@ -3,7 +3,7 @@
 
 * 当前版本
 
-Video Pose 0.51 已形成单工位生产 Edge 闭环:
+Video Pose 0.52 已形成单工位生产 Edge 闭环:
 
 #+BEGIN_SRC text
 4 x RTSP Cameras
@@ -310,3 +310,16 @@ The Console covers:
 - Pending Review confirm/dismiss.
 
 The token stays in page memory and is sent in the Authorization header. It is not stored in localStorage or placed in URLs.
+
+
+* Web Console 0.52
+
+The Edge Console now also supports:
+
+- latest Session history.
+- full Session result inspection.
+- Evidence Explorer with one authenticated preview per camera.
+- incomplete Audit Session listing.
+- controlled ABORTED crash recovery for authorized engineers/admins.
+
+Evidence images still use authenticated fetch + Blob URLs, so bearer tokens never appear in image URLs.

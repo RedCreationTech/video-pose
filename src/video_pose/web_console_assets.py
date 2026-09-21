@@ -128,6 +128,42 @@ INDEX_HTML = r"""<!doctype html>
       </div>
       <div id="reviewsList" class="review-list empty-state">暂无待复核数据.</div>
     </section>
+
+    <section class="two-col operations-lower">
+      <article class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Session 历史</h2>
+            <p>最近完成或中止的 Session. 点击后加载完整结果和 Evidence.</p>
+          </div>
+          <span id="historyCount" class="badge neutral">0</span>
+        </div>
+        <div id="historyList" class="history-list empty-state">暂无历史 Session.</div>
+      </article>
+
+      <article class="panel">
+        <div class="section-head">
+          <div>
+            <h2>Crash Recovery</h2>
+            <p>没有 final.json 的残缺 Session 必须显式恢复为 ABORTED.</p>
+          </div>
+          <span id="incompleteCount" class="badge neutral">0</span>
+        </div>
+        <div id="incompleteList" class="history-list empty-state">暂无残缺 Session.</div>
+      </article>
+    </section>
+
+    <section class="panel evidence-panel">
+      <div class="section-head">
+        <div>
+          <h2>Evidence Explorer</h2>
+          <p id="selectedSessionLabel">从 Session 历史选择一条记录.</p>
+        </div>
+        <button id="reloadEvidenceBtn" class="secondary">刷新证据</button>
+      </div>
+      <div id="historicalDetail" class="detail-box">尚未选择 Session.</div>
+      <div id="evidenceGrid" class="evidence-grid empty-state">暂无证据.</div>
+    </section>
   </main>
 
   <footer>
@@ -158,9 +194,10 @@ input{color:var(--text);background:#0a121a;border:1px solid #31465b;border-radiu
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-box{background:#0b141d;border:1px solid #233649;border-radius:7px;padding:10px;color:#c6d2dd;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px}.check-list,.compact-list,.review-list{display:grid;gap:7px}.check-row,.compact-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;padding:8px;border:1px solid #24384b;border-radius:6px;background:#0d161f}.check-name{font-weight:650}.check-detail{color:var(--muted);font-size:11px;overflow-wrap:anywhere}.indicator{width:9px;height:9px;border-radius:50%;margin-top:4px;background:var(--muted)}.indicator.good{background:var(--green);box-shadow:0 0 8px rgba(71,212,135,.5)}.indicator.bad{background:var(--red);box-shadow:0 0 8px rgba(255,109,118,.45)}
 .split-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}.health-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.health-item{background:#0d161f;border:1px solid #24384b;border-radius:6px;padding:9px}.health-item span{display:block;color:var(--muted);font-size:11px}.health-item strong{display:block;margin-top:3px;overflow-wrap:anywhere}
 .review-row{border:1px solid #2a3e51;border-radius:7px;background:#0d161f;padding:10px;display:grid;grid-template-columns:1fr auto;gap:12px}.review-actions{display:flex;gap:6px;align-items:center}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.empty-state{color:var(--muted);padding:15px;text-align:center}
+.operations-lower{margin-top:12px}.history-list{display:grid;gap:7px;max-height:360px;overflow:auto}.history-row{border:1px solid #26394c;border-radius:7px;background:#0d161f;padding:9px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.history-row button{padding:6px 9px}.history-title{font-size:12px;font-weight:700}.history-meta{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.evidence-panel{margin-top:12px}.evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:10px;margin-top:10px}.evidence-card{border:1px solid #26394c;border-radius:8px;background:#0d161f;padding:10px}.evidence-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}.evidence-images{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.evidence-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:#111b26;border:1px solid #233649;border-radius:5px}.evidence-caption{font-size:10px;color:var(--muted);margin-top:3px}.danger-text{color:var(--red)}
 footer{max-width:1600px;margin:0 auto;padding:14px 22px 24px;display:flex;justify-content:space-between;color:#64788d;font-size:11px}
 @media(max-width:1050px){.camera-grid,.kpi-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
-@media(max-width:650px){.topbar{position:static;padding:14px;align-items:flex-start;gap:10px}.badges{flex-wrap:wrap;justify-content:flex-end}.layout{padding:10px}.camera-grid,.kpi-grid{grid-template-columns:1fr}.form-row{align-items:stretch;flex-direction:column}.split-list,.health-grid{grid-template-columns:1fr}.review-row{grid-template-columns:1fr}}"""
+@media(max-width:650px){.topbar{position:static;padding:14px;align-items:flex-start;gap:10px}.badges{flex-wrap:wrap;justify-content:flex-end}.layout{padding:10px}.camera-grid,.kpi-grid,.evidence-grid{grid-template-columns:1fr}.form-row{align-items:stretch;flex-direction:column}.split-list,.health-grid{grid-template-columns:1fr}.review-row,.history-row{grid-template-columns:1fr}}"""
 
 APP_JS = r""""use strict";
 
@@ -171,6 +208,8 @@ var state = {
   connected: false,
   refreshing: false,
   snapshots: new Map(),
+  evidenceUrls: new Map(),
+  selectedSessionId: null,
   timer: null,
   tick: 0
 };
@@ -301,7 +340,12 @@ async function refreshAll(forceSnapshots) {
       optionalApi("/api/v1/runtime/version", "runtime:read"),
       optionalApi("/api/v1/cameras", "camera:read"),
       optionalApi("/api/v1/runtime/persistence", "persistence:read"),
-      optionalApi("/api/v1/reviews/pending?limit=50", "violation:review")
+      optionalApi("/api/v1/reviews/pending?limit=50", "violation:review"),
+      optionalApi("/api/v1/sessions?limit=30", "session:read"),
+      optionalApi(
+        "/api/v1/runtime/persistence/incomplete-sessions",
+        "persistence:read"
+      )
     ]);
     if (results[0]) renderReadiness(results[0]);
     if (results[1]) renderHealth(results[1]);
@@ -314,6 +358,8 @@ async function refreshAll(forceSnapshots) {
     }
     if (results[6]) renderPersistence(results[6]);
     renderReviews(results[7] || []);
+    renderHistory(results[8] || []);
+    renderIncomplete(results[9] || []);
     setText("lastRefresh", "最后刷新 " + new Date().toLocaleTimeString());
   } finally {
     state.refreshing = false;
@@ -521,6 +567,234 @@ function renderReviews(reviews) {
     target.appendChild(row);
   });
 }
+function renderHistory(sessions) {
+  var target = el("historyList");
+  clearNode(target);
+  setText("historyCount", sessions.length);
+  if (!sessions.length) {
+    target.className = "history-list empty-state";
+    target.textContent = "暂无历史 Session.";
+    return;
+  }
+  target.className = "history-list";
+  sessions.forEach(function (session) {
+    var row = makeNode("div", "history-row");
+    var body = makeNode("div");
+    body.appendChild(makeNode(
+      "div",
+      "history-title",
+      (session.status || "-") + " · " + truncate(session.session_id, 28)
+    ));
+    var passed = session.passed === true ? "PASS" :
+      (session.passed === false ? "FAIL" : "-");
+    body.appendChild(makeNode(
+      "div",
+      "history-meta mono",
+      "Operator " + (session.operator_id || "-") +
+      " · Score " + (session.final_score === null || session.final_score === undefined ? "-" : session.final_score) +
+      " · " + passed +
+      "\nStarted " + (session.started_at || "-")
+    ));
+    row.appendChild(body);
+    var open = makeNode("button", "secondary", "查看");
+    open.addEventListener("click", function () {
+      openHistoricalSession(session.session_id);
+    });
+    row.appendChild(open);
+    target.appendChild(row);
+  });
+}
+function renderIncomplete(items) {
+  var target = el("incompleteList");
+  clearNode(target);
+  setText("incompleteCount", items.length);
+  if (!items.length) {
+    target.className = "history-list empty-state";
+    target.textContent = "暂无残缺 Session.";
+    return;
+  }
+  target.className = "history-list";
+  items.forEach(function (item) {
+    var row = makeNode("div", "history-row");
+    var body = makeNode("div");
+    body.appendChild(makeNode(
+      "div",
+      "history-title danger-text",
+      "INCOMPLETE · " + truncate(item.session_id, 28)
+    ));
+    body.appendChild(makeNode(
+      "div",
+      "history-meta mono",
+      "Operation " + item.operation +
+      " · Updates " + item.update_count +
+      "\nStarted " + item.started_at
+    ));
+    row.appendChild(body);
+    var recover = makeNode("button", "danger", "恢复为 ABORTED");
+    recover.disabled = !can("persistence:repair");
+    recover.addEventListener("click", function () {
+      recoverIncomplete(item.session_id);
+    });
+    row.appendChild(recover);
+    target.appendChild(row);
+  });
+}
+async function openHistoricalSession(sessionId) {
+  state.selectedSessionId = sessionId;
+  setText("selectedSessionLabel", "Session " + sessionId);
+  try {
+    var detail = await api(
+      "/api/v1/sessions/" + encodeURIComponent(sessionId)
+    );
+    renderHistoricalDetail(detail);
+    await loadSessionEvidence(sessionId);
+  } catch (error) {
+    showNotice("加载 Session 失败: " + error.message, true);
+  }
+}
+function renderHistoricalDetail(detail) {
+  var session = detail.session || {};
+  var actions = detail.actions || [];
+  var violations = detail.violations || [];
+  var steps = detail.steps || [];
+  el("historicalDetail").textContent =
+    "Status: " + (session.status || "-") +
+    " · Score: " + (session.final_score === null || session.final_score === undefined ? "-" : session.final_score) +
+    " · Result: " + (session.passed === true ? "PASS" : (session.passed === false ? "FAIL" : "-")) +
+    "\nActions: " + actions.length +
+    " · Steps: " + steps.length +
+    " · Violations: " + violations.length +
+    "\nRelease: " + ((session.metadata_json || {}).release_fingerprint || "-");
+}
+async function loadSessionEvidence(sessionId) {
+  revokeEvidenceUrls();
+  var target = el("evidenceGrid");
+  clearNode(target);
+  if (!can("evidence:read")) {
+    target.className = "evidence-grid empty-state";
+    target.textContent = "当前角色没有 Evidence 读取权限.";
+    return;
+  }
+  try {
+    var manifests = await api(
+      "/api/v1/sessions/" + encodeURIComponent(sessionId) + "/evidence"
+    );
+    renderEvidence(manifests || []);
+  } catch (error) {
+    target.className = "evidence-grid empty-state";
+    target.textContent = "Evidence 加载失败: " + error.message;
+  }
+}
+function renderEvidence(manifests) {
+  var target = el("evidenceGrid");
+  clearNode(target);
+  if (!manifests.length) {
+    target.className = "evidence-grid empty-state";
+    target.textContent = "该 Session 暂无 Evidence.";
+    return;
+  }
+  target.className = "evidence-grid";
+  manifests.forEach(function (manifest) {
+    var card = makeNode("article", "evidence-card");
+    var head = makeNode("div", "evidence-head");
+    var title = makeNode(
+      "div",
+      "history-title",
+      (manifest.status || "-") + " · " + (manifest.rule_id || "-")
+    );
+    head.appendChild(title);
+    head.appendChild(makeBadge(
+      manifest.review_status || "UNREVIEWED",
+      manifest.review_status === "CONFIRMED" ? "bad" :
+        (manifest.review_status === "DISMISSED" ? "good" : "warn")
+    ));
+    card.appendChild(head);
+    card.appendChild(makeNode(
+      "div",
+      "history-meta mono",
+      "Evidence " + manifest.evidence_id +
+      "\nStep " + manifest.step_code +
+      " · Event " + manifest.event_id
+    ));
+    var images = makeNode("div", "evidence-images");
+    card.appendChild(images);
+    target.appendChild(card);
+    loadEvidencePreviewImages(manifest, images);
+  });
+}
+async function loadEvidencePreviewImages(manifest, target) {
+  var byCamera = new Map();
+  (manifest.images || []).forEach(function (image) {
+    if (!byCamera.has(image.camera_id)) byCamera.set(image.camera_id, image);
+  });
+  var tasks = [];
+  byCamera.forEach(function (image, cameraId) {
+    tasks.push(loadEvidenceImage(manifest, image, cameraId, target));
+  });
+  await Promise.all(tasks);
+}
+async function loadEvidenceImage(manifest, image, cameraId, target) {
+  try {
+    var path =
+      "/api/v1/sessions/" + encodeURIComponent(manifest.session_id) +
+      "/evidence/" + encodeURIComponent(manifest.evidence_id) +
+      "/files/" + encodeURIComponent(cameraId) +
+      "/" + encodeURIComponent(image.filename);
+    var response = await fetch(path, {
+      headers: authHeaders(false),
+      cache: "no-store"
+    });
+    if (!response.ok) return;
+    var blob = await response.blob();
+    var url = URL.createObjectURL(blob);
+    var key = manifest.evidence_id + ":" + cameraId;
+    var old = state.evidenceUrls.get(key);
+    if (old) URL.revokeObjectURL(old);
+    state.evidenceUrls.set(key, url);
+    var wrapper = makeNode("div");
+    var img = makeNode("img", "evidence-thumb");
+    img.src = url;
+    img.alt = cameraId + " evidence";
+    wrapper.appendChild(img);
+    wrapper.appendChild(makeNode(
+      "div",
+      "evidence-caption mono",
+      cameraId + " · " + Math.round(image.timestamp_ms) + " ms"
+    ));
+    target.appendChild(wrapper);
+  } catch (_) {}
+}
+function revokeEvidenceUrls() {
+  state.evidenceUrls.forEach(function (url) {
+    URL.revokeObjectURL(url);
+  });
+  state.evidenceUrls.clear();
+}
+async function recoverIncomplete(sessionId) {
+  var reason = window.prompt(
+    "请输入恢复原因. 该 Session 将被固定恢复为 ABORTED:",
+    "Edge host/process unclean termination"
+  );
+  if (!reason || !reason.trim()) return;
+  if (!window.confirm(
+    "确认将 " + sessionId + " 恢复为 ABORTED 并追加 SYSTEM-QUALITY-RECOVERY?"
+  )) return;
+  try {
+    await api(
+      "/api/v1/runtime/persistence/incomplete-sessions/" +
+      encodeURIComponent(sessionId) + "/recover",
+      {
+        method: "POST",
+        body: JSON.stringify({reason: reason.trim()})
+      }
+    );
+    showNotice("Crash Recovery 完成: " + sessionId, false);
+    await refreshAll(false);
+  } catch (error) {
+    showNotice("Crash Recovery 失败: " + error.message, true);
+  }
+}
+
 async function startSession() {
   var body = {};
   var operatorId = el("operatorInput").value.trim();
@@ -591,6 +865,11 @@ window.addEventListener("DOMContentLoaded", function () {
   el("abortBtn").addEventListener("click", function () { finishSession("abort"); });
   el("refreshSnapshotsBtn").addEventListener("click", refreshSnapshots);
   el("reconcileBtn").addEventListener("click", reconcile);
+  el("reloadEvidenceBtn").addEventListener("click", function () {
+    if (state.selectedSessionId) {
+      loadSessionEvidence(state.selectedSessionId);
+    }
+  });
   el("tokenInput").addEventListener("keydown", function (event) {
     if (event.key === "Enter") connect();
   });
@@ -599,4 +878,5 @@ window.addEventListener("DOMContentLoaded", function () {
 window.addEventListener("beforeunload", function () {
   stopPolling();
   revokeSnapshots();
+  revokeEvidenceUrls();
 });"""
