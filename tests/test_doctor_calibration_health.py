@@ -2,7 +2,6 @@ from pathlib import Path
 
 from video_pose.doctor import build_doctor_report
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
