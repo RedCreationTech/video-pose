@@ -2,7 +2,6 @@ from pathlib import Path
 
 from video_pose.fault_scenario import run_fault_scenario
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
