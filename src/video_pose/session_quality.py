@@ -38,6 +38,12 @@ class SessionQualityMonitor:
         self._sync_base_reference: int | None = None
         self._sync_base_miss: int | None = None
         self._last_sync_emitted: int | None = None
+        self._processing_base_received: int | None = None
+        self._processing_base_dropped: int | None = None
+        self._processing_base_errors: int | None = None
+        self._evidence_base_submitted: int | None = None
+        self._evidence_base_dropped: int | None = None
+        self._evidence_base_errors: int | None = None
 
     def observe(
         self,
@@ -56,6 +62,20 @@ class SessionQualityMonitor:
         if self.config.monitor_sync:
             output.extend(
                 self._sync_incidents(
+                    snapshot,
+                    now_monotonic_ms=now_monotonic_ms,
+                )
+            )
+        if self.config.monitor_processing:
+            output.extend(
+                self._processing_incidents(
+                    snapshot,
+                    now_monotonic_ms=now_monotonic_ms,
+                )
+            )
+        if self.config.monitor_evidence:
+            output.extend(
+                self._evidence_incidents(
                     snapshot,
                     now_monotonic_ms=now_monotonic_ms,
                 )
@@ -213,6 +233,158 @@ class SessionQualityMonitor:
                 "max_abs_drift_ms_per_minute": (
                     self.config.max_abs_sync_drift_ms_per_minute
                 ),
+            },
+            actual=actual,
+        )
+        return [violation] if violation is not None else []
+
+    def _processing_incidents(
+        self,
+        snapshot: LiveHealthSnapshot,
+        *,
+        now_monotonic_ms: float,
+    ) -> list[Violation]:
+        runtime = snapshot.runtime
+        if self._processing_base_received is None:
+            self._processing_base_received = (
+                runtime.frame_sets_received_total
+            )
+            self._processing_base_dropped = (
+                runtime.frame_sets_dropped_total
+            )
+            self._processing_base_errors = (
+                runtime.processing_errors_total
+            )
+
+        base_received = self._processing_base_received or 0
+        base_dropped = self._processing_base_dropped or 0
+        base_errors = self._processing_base_errors or 0
+        received = max(
+            0,
+            runtime.frame_sets_received_total - base_received,
+        )
+        dropped = max(
+            0,
+            runtime.frame_sets_dropped_total - base_dropped,
+        )
+        errors = max(
+            0,
+            runtime.processing_errors_total - base_errors,
+        )
+        drop_ratio = dropped / received if received else 0.0
+        reasons: list[str] = []
+        if errors > self.config.max_processing_error_delta:
+            reasons.append(f"errors={errors}")
+        if drop_ratio > self.config.max_processing_drop_ratio:
+            reasons.append(
+                f"drop_ratio={drop_ratio:.3f}"
+            )
+
+        violation = self._condition_violation(
+            "processing",
+            failed=bool(reasons),
+            now_monotonic_ms=now_monotonic_ms,
+            grace_ms=self.config.processing_grace_ms,
+            message=(
+                "inference processing quality degraded: "
+                + ", ".join(reasons)
+            ),
+            expected={
+                "max_error_delta": (
+                    self.config.max_processing_error_delta
+                ),
+                "max_drop_ratio": (
+                    self.config.max_processing_drop_ratio
+                ),
+            },
+            actual={
+                "frame_sets_received_delta": received,
+                "frame_sets_dropped_delta": dropped,
+                "processing_errors_delta": errors,
+                "drop_ratio": drop_ratio,
+            },
+        )
+        return [violation] if violation is not None else []
+
+    def _evidence_incidents(
+        self,
+        snapshot: LiveHealthSnapshot,
+        *,
+        now_monotonic_ms: float,
+    ) -> list[Violation]:
+        evidence = snapshot.evidence
+        reasons: list[str] = []
+        actual: dict[str, Any] = {}
+        if evidence is None:
+            reasons.append("evidence health unavailable")
+        else:
+            if self._evidence_base_submitted is None:
+                self._evidence_base_submitted = (
+                    evidence.submitted_total
+                )
+                self._evidence_base_dropped = (
+                    evidence.dropped_total
+                )
+                self._evidence_base_errors = (
+                    evidence.errors_total
+                )
+
+            base_submitted = self._evidence_base_submitted or 0
+            base_dropped = self._evidence_base_dropped or 0
+            base_errors = self._evidence_base_errors or 0
+            submitted = max(
+                0,
+                evidence.submitted_total - base_submitted,
+            )
+            dropped = max(
+                0,
+                evidence.dropped_total - base_dropped,
+            )
+            errors = max(
+                0,
+                evidence.errors_total - base_errors,
+            )
+            drop_ratio = (
+                dropped / submitted if submitted else 0.0
+            )
+            actual.update(
+                {
+                    "submitted_delta": submitted,
+                    "dropped_delta": dropped,
+                    "errors_delta": errors,
+                    "drop_ratio": drop_ratio,
+                    "over_capacity": evidence.over_capacity,
+                }
+            )
+            if errors > self.config.max_evidence_error_delta:
+                reasons.append(f"errors={errors}")
+            if drop_ratio > self.config.max_evidence_drop_ratio:
+                reasons.append(
+                    f"drop_ratio={drop_ratio:.3f}"
+                )
+            if (
+                self.config.block_evidence_over_capacity
+                and evidence.over_capacity
+            ):
+                reasons.append("over_capacity=true")
+
+        violation = self._condition_violation(
+            "evidence",
+            failed=bool(reasons),
+            now_monotonic_ms=now_monotonic_ms,
+            grace_ms=self.config.evidence_grace_ms,
+            message=(
+                "evidence capture quality degraded: "
+                + ", ".join(reasons)
+            ),
+            expected={
+                "max_error_delta": (
+                    self.config.max_evidence_error_delta
+                ),
+                "max_drop_ratio": (
+                    self.config.max_evidence_drop_ratio
+                ),
+                "over_capacity": False,
             },
             actual=actual,
         )

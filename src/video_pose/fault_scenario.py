@@ -9,6 +9,7 @@ from .contracts import ReplayResult, Violation
 from .live_health import (
     CameraHealthSnapshot,
     CameraState,
+    EvidenceHealthSnapshot,
     LiveHealthSnapshot,
     RuntimeHealthSnapshot,
     SyncHealthSnapshot,
@@ -34,12 +35,29 @@ class FaultSyncState(BaseModel):
     )
 
 
+class FaultRuntimeState(BaseModel):
+    frame_sets_received_total: int = Field(default=0, ge=0)
+    frame_sets_processed_total: int = Field(default=0, ge=0)
+    frame_sets_dropped_total: int = Field(default=0, ge=0)
+    processing_errors_total: int = Field(default=0, ge=0)
+
+
+class FaultEvidenceState(BaseModel):
+    submitted_total: int = Field(default=0, ge=0)
+    processed_total: int = Field(default=0, ge=0)
+    dropped_total: int = Field(default=0, ge=0)
+    errors_total: int = Field(default=0, ge=0)
+    over_capacity: bool = False
+
+
 class FaultStep(BaseModel):
     at_ms: float = Field(ge=0.0)
     cameras: dict[str, FaultCameraState] = Field(
         default_factory=dict
     )
     sync: FaultSyncState | None = None
+    runtime: FaultRuntimeState | None = None
+    evidence: FaultEvidenceState | None = None
 
 
 class FaultExpectation(BaseModel):
@@ -98,6 +116,8 @@ class FaultScenarioRunner:
             for camera_id in scenario.camera_ids
         }
         self._sync: FaultSyncState | None = None
+        self._runtime = FaultRuntimeState()
+        self._evidence: FaultEvidenceState | None = None
 
     def run(self) -> FaultScenarioEvaluation:
         for step in self.scenario.steps:
@@ -142,6 +162,10 @@ class FaultScenarioRunner:
             self._cameras[camera_id] = state
         if step.sync is not None:
             self._sync = step.sync
+        if step.runtime is not None:
+            self._runtime = step.runtime
+        if step.evidence is not None:
+            self._evidence = step.evidence
 
     def _snapshot(self, at_ms: float) -> LiveHealthSnapshot:
         cameras = [
@@ -174,10 +198,30 @@ class FaultScenarioRunner:
             camera.state == CameraState.ONLINE
             for camera in cameras
         )
+        evidence = (
+            EvidenceHealthSnapshot(
+                submitted_total=self._evidence.submitted_total,
+                processed_total=self._evidence.processed_total,
+                dropped_total=self._evidence.dropped_total,
+                errors_total=self._evidence.errors_total,
+                drop_ratio=(
+                    self._evidence.dropped_total
+                    / self._evidence.submitted_total
+                    if self._evidence.submitted_total
+                    else 0.0
+                ),
+                over_capacity=self._evidence.over_capacity,
+            )
+            if self._evidence is not None
+            else None
+        )
         return LiveHealthSnapshot(
             cameras=cameras,
-            runtime=RuntimeHealthSnapshot(),
+            runtime=RuntimeHealthSnapshot(
+                **self._runtime.model_dump()
+            ),
             sync=sync,
+            evidence=evidence,
             ready=ready,
         )
 

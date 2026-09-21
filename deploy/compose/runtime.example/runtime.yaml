@@ -85,4 +85,13 @@ session_quality:
   max_sync_miss_ratio: 0.30
   max_sync_p99_skew_ms: 30
   max_abs_sync_drift_ms_per_minute: 3.0
+  monitor_processing: true
+  processing_grace_ms: 3000
+  max_processing_error_delta: 0
+  max_processing_drop_ratio: 0.20
+  monitor_evidence: true
+  evidence_grace_ms: 3000
+  max_evidence_error_delta: 0
+  max_evidence_drop_ratio: 0.30
+  block_evidence_over_capacity: true
   severity: CRITICAL

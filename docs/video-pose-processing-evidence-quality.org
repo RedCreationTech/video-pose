@@ -1,0 +1,58 @@
+#+TITLE: Video Pose Processing and Evidence Quality Guard
+#+SUBTITLE: Session-local Counter Deltas for Inference and Evidence Integrity
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. New guarded paths
+
+In-session quality monitoring now covers:
+
+- inference/processing errors.
+- processing FrameSet drop ratio.
+- Evidence Worker errors.
+- Evidence Worker drop ratio.
+- Evidence over-capacity.
+
+All sustained failures become CRITICAL =SYSTEM_QUALITY= violations in the production template.
+
+* 2. Session-local baselines
+
+Runtime and Evidence counters are process-lifetime cumulative metrics.
+
+A new Session records the first observed counter values as its baseline and evaluates only deltas:
+
+#+BEGIN_SRC text
+session_errors = current_errors - errors_at_session_start
+session_dropped = current_dropped - dropped_at_session_start
+#+END_SRC
+
+Therefore an error from an earlier Session cannot poison a later Session.
+
+* 3. Default production thresholds
+
+#+BEGIN_SRC yaml
+monitor_processing: true
+processing_grace_ms: 3000
+max_processing_error_delta: 0
+max_processing_drop_ratio: 0.20
+
+monitor_evidence: true
+evidence_grace_ms: 3000
+max_evidence_error_delta: 0
+max_evidence_drop_ratio: 0.30
+block_evidence_over_capacity: true
+#+END_SRC
+
+* 4. Fault scenarios
+
+CI now adds:
+
+- processing-error.
+- processing-drop.
+- evidence-pressure.
+
+Together with camera outage, sync stall and clock drift, the deterministic fault matrix covers the full observation path from camera timing through inference and evidence capture.
+
+* 5. Persistence policy
+
+PostgreSQL query-store degradation is intentionally not converted into a compliance failure while immutable JSONL audit remains writable. It remains visible through persistence health/readiness and can block new Sessions by site policy.

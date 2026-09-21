@@ -1,0 +1,48 @@
+scenario_id: evidence-pressure
+session_id: fault-evidence-pressure
+rules: ../rules/pick-place.yaml
+camera_ids: []
+
+quality:
+  enabled: true
+  monitor_cameras: false
+  monitor_sync: false
+  monitor_processing: false
+  monitor_evidence: true
+  evidence_grace_ms: 500
+  max_evidence_error_delta: 0
+  max_evidence_drop_ratio: 0.20
+  block_evidence_over_capacity: true
+  severity: CRITICAL
+
+steps:
+  - at_ms: 0
+    evidence:
+      submitted_total: 100
+      processed_total: 100
+      dropped_total: 0
+      errors_total: 0
+      over_capacity: false
+
+  - at_ms: 100
+    evidence:
+      submitted_total: 110
+      processed_total: 103
+      dropped_total: 7
+      errors_total: 1
+      over_capacity: true
+
+  - at_ms: 700
+    evidence:
+      submitted_total: 120
+      processed_total: 106
+      dropped_total: 14
+      errors_total: 1
+      over_capacity: true
+
+expect:
+  violation_types:
+    - SYSTEM_QUALITY
+  rule_ids:
+    - SYSTEM-QUALITY-EVIDENCE
+  final_session_passed: false

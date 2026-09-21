@@ -1,0 +1,44 @@
+scenario_id: processing-drop
+session_id: fault-processing-drop
+rules: ../rules/pick-place.yaml
+camera_ids: []
+
+quality:
+  enabled: true
+  monitor_cameras: false
+  monitor_sync: false
+  monitor_processing: true
+  processing_grace_ms: 500
+  max_processing_error_delta: 0
+  max_processing_drop_ratio: 0.20
+  monitor_evidence: false
+  severity: CRITICAL
+
+steps:
+  - at_ms: 0
+    runtime:
+      frame_sets_received_total: 100
+      frame_sets_processed_total: 100
+      frame_sets_dropped_total: 0
+      processing_errors_total: 0
+
+  - at_ms: 100
+    runtime:
+      frame_sets_received_total: 120
+      frame_sets_processed_total: 110
+      frame_sets_dropped_total: 10
+      processing_errors_total: 0
+
+  - at_ms: 700
+    runtime:
+      frame_sets_received_total: 140
+      frame_sets_processed_total: 120
+      frame_sets_dropped_total: 20
+      processing_errors_total: 0
+
+expect:
+  violation_types:
+    - SYSTEM_QUALITY
+  rule_ids:
+    - SYSTEM-QUALITY-PROCESSING
+  final_session_passed: false

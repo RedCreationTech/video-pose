@@ -113,6 +113,23 @@ class SessionQualityRuntimeConfig(BaseModel):
         default=3.0,
         ge=0.0,
     )
+    monitor_processing: bool = False
+    processing_grace_ms: int = Field(default=3000, ge=0)
+    max_processing_error_delta: int = Field(default=0, ge=0)
+    max_processing_drop_ratio: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+    )
+    monitor_evidence: bool = False
+    evidence_grace_ms: int = Field(default=3000, ge=0)
+    max_evidence_error_delta: int = Field(default=0, ge=0)
+    max_evidence_drop_ratio: float = Field(
+        default=0.30,
+        ge=0.0,
+        le=1.0,
+    )
+    block_evidence_over_capacity: bool = True
     severity: Literal["MINOR", "MAJOR", "CRITICAL"] = "CRITICAL"
 
 
