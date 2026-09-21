@@ -21,7 +21,7 @@ from .model_pool import PersistentModelPool
 from .persistent_camera import PersistentCameraHub
 from .realtime_rules import RuleSessionUpdate
 from .runtime_config import LoadedAnalysisConfig
-from .runtime_fingerprint import build_runtime_fingerprint
+from .runtime_identity import build_runtime_release_identity
 from .session_audit import SessionAuditMetadata, SessionAuditWriter
 from .session_controller import (
     ManagedSessionState,
@@ -98,6 +98,10 @@ class PersistentLiveSessionController:
         self.processing_queue_size = processing_queue_size
         self.runtime_factory = runtime_factory
         self.repository = repository
+        self.release_identity = build_runtime_release_identity(
+            config,
+            hub.manifest,
+        )
         self._lock = threading.RLock()
         self._runtime: SessionAnalysisRuntime | None = None
         self._state: ManagedSessionState | None = None
@@ -195,10 +199,8 @@ class PersistentLiveSessionController:
                 status=ManagedSessionStatus.RUNNING,
                 started_at=started_at,
             )
-            fingerprint = build_runtime_fingerprint(
-                self.config,
-                self.hub.manifest,
-            )
+            identity = self.release_identity
+            fingerprint = identity.runtime_fingerprint
             metadata = SessionAuditMetadata(
                 session_id=session_id,
                 trace_id=session_trace_id,
@@ -226,6 +228,10 @@ class PersistentLiveSessionController:
                     else None
                 ),
                 **fingerprint.model_dump(mode="python"),
+                application_version=identity.application_version,
+                git_sha=identity.git_sha,
+                image_digest=identity.image_digest,
+                release_fingerprint=identity.release_fingerprint,
             )
             self.audit.start(metadata)
             if self.repository is not None:
@@ -266,6 +272,9 @@ class PersistentLiveSessionController:
                 workstation_id=state.workstation_id,
                 operation=state.operation,
                 rule_set_version=rule_set.version,
+                release_fingerprint=(
+                    identity.release_fingerprint
+                ),
             )
             emit_telemetry_span(
                 "session.started",
@@ -336,6 +345,9 @@ class PersistentLiveSessionController:
                 ),
             }
         )
+
+    def runtime_version(self) -> dict[str, Any]:
+        return self.release_identity.model_dump(mode="json")
 
     def camera_catalog(self) -> list[dict[str, Any]]:
         return self.hub.camera_catalog()

@@ -49,6 +49,10 @@ class SessionAuditMetadata(BaseModel):
     model_artifact_sha256: dict[str, str] = Field(
         default_factory=dict
     )
+    application_version: str | None = None
+    git_sha: str | None = None
+    image_digest: str | None = None
+    release_fingerprint: str | None = None
 
 
 class SessionAuditWriter:

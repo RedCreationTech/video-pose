@@ -172,6 +172,20 @@ def create_managed_live_app(
     ) -> Any:
         return principal.model_dump(mode="json")
 
+    @app.get("/api/v1/runtime/version")
+    def runtime_version(
+        _principal: Any = Depends(require(Permission.RUNTIME_READ)),
+    ) -> Any:
+        method = getattr(controller, "runtime_version", None)
+        if not callable(method):
+            return {
+                "application_version": "unknown",
+                "git_sha": "unknown",
+                "image_digest": None,
+                "release_fingerprint": None,
+            }
+        return method()
+
     @app.get("/api/v1/cameras")
     def camera_catalog(
         _principal: Any = Depends(require(Permission.CAMERA_READ)),

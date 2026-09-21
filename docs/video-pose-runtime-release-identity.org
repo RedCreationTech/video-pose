@@ -1,0 +1,104 @@
+#+TITLE: Video Pose Runtime Release Identity
+#+SUBTITLE: Software, Image, Model and Configuration Fingerprint for Reproducible Compliance
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+A historical Session must answer:
+
+#+BEGIN_SRC text
+Which exact software + image + model + rules + calibration
+produced this result?
+#+END_SRC
+
+A package version alone is insufficient.
+
+* 2. Release Identity
+
+RuntimeReleaseIdentity contains:
+
+- application_version.
+- git_sha.
+- image_digest when supplied by deployment.
+- release_fingerprint.
+- complete RuntimeFingerprint.
+
+RuntimeFingerprint already includes:
+
+- capture backend and timestamp source.
+- sync tolerance and camera clock offsets.
+- config/manifest/rules/zones SHA-256.
+- calibration/control-point SHA-256.
+- pose config SHA-256.
+- model release id.
+- model release manifest SHA-256.
+- model artifact SHA-256 map.
+
+* 3. Release Fingerprint
+
+Video Pose serializes the release identity inputs as canonical sorted JSON and calculates SHA-256.
+
+Any change in:
+
+- application version.
+- Git SHA.
+- image digest.
+- model release.
+- rules.
+- calibration.
+- runtime config.
+
+changes the release_fingerprint.
+
+* 4. Process Lifetime
+
+Release identity is calculated once when PersistentLiveSessionController is created.
+
+Every Session in that Edge process reuses the same identity.
+
+This prevents files modified after process startup from silently rewriting the historical identity of an already-loaded runtime.
+
+* 5. API
+
+#+BEGIN_SRC text
+GET /api/v1/runtime/version
+#+END_SRC
+
+Requires =runtime:read=.
+
+* 6. Audit
+
+Each Session metadata.json records:
+
+#+BEGIN_SRC text
+application_version
+git_sha
+image_digest
+release_fingerprint
+#+END_SRC
+
+alongside the existing runtime hashes.
+
+* 7. Deployment Variables
+
+#+BEGIN_SRC text
+VIDEO_POSE_GIT_SHA
+VIDEO_POSE_IMAGE_DIGEST
+#+END_SRC
+
+CI/CD should inject the immutable Git commit and deployed image digest.
+
+When image digest is unavailable it remains null rather than being invented.
+
+* 8. Acceptance
+
+Field acceptance reports should archive:
+
+- =/api/v1/runtime/version= output.
+- Edge container/image digest.
+- model release manifest.
+- Golden Replay result.
+- Managed Soak result.
+
+This creates one compact release identity for every accepted production build.

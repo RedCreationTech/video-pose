@@ -141,6 +141,7 @@ def main() -> int:
         autostart=args.autostart,
         auth=auth,
     )
+    identity = controller.runtime_version()
     log_event(
         LOGGER,
         "service_runtime_constructed",
@@ -150,6 +151,9 @@ def main() -> int:
             if loaded.config.live.backend.value == "gstreamer-native"
             else "arrival"
         ),
+        application_version=identity["application_version"],
+        git_sha=identity["git_sha"],
+        release_fingerprint=identity["release_fingerprint"],
     )
     try:
         uvicorn.run(
