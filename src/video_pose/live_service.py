@@ -14,6 +14,7 @@ from .auth import (
 from .incomplete_recovery import IncompleteRecoveryRequest
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
+from .realtime_ticket import RealtimeTicketManager
 from .session_controller import SessionStartRequest
 from .session_readiness import SessionNotReadyError
 from .telemetry import telemetry_span
@@ -72,6 +73,7 @@ def create_live_app(
     app.state.runtime = runtime
     app.state.broker = event_broker
     app.state.auth = auth_manager
+    app.state.realtime_tickets = ticket_manager
     _install_trace_middleware(app)
 
     _register_runtime_routes(
@@ -86,6 +88,7 @@ def create_live_app(
         WebSocket,
         WebSocketDisconnect,
         JSONResponse,
+        ticket_manager=None,
     )
     return app
 
@@ -116,6 +119,7 @@ def create_managed_live_app(
 
     event_broker = broker or LiveEventBroker()
     auth_manager = auth or AuthManager.disabled()
+    ticket_manager = RealtimeTicketManager()
     controller.set_event_callback(event_broker.publish)
 
     @asynccontextmanager
@@ -165,6 +169,7 @@ def create_managed_live_app(
         WebSocket,
         WebSocketDisconnect,
         JSONResponse,
+        ticket_manager=ticket_manager,
     )
     register_web_console(app, Response)
 
@@ -173,6 +178,16 @@ def create_managed_live_app(
         principal: Any = Depends(require(Permission.RUNTIME_READ)),
     ) -> Any:
         return principal.model_dump(mode="json")
+
+    @app.post("/api/v1/auth/realtime-ticket")
+    def realtime_ticket(
+        principal: Any = Depends(
+            require(Permission.REALTIME_READ)
+        ),
+    ) -> Any:
+        return ticket_manager.issue(
+            principal
+        ).model_dump(mode="json")
 
     @app.get("/api/v1/runtime/version")
     def runtime_version(
@@ -557,6 +572,7 @@ def _register_runtime_routes(
     WebSocket: Any,
     WebSocketDisconnect: Any,
     JSONResponse: Any,
+    ticket_manager: RealtimeTicketManager | None = None,
 ) -> None:
     require = _build_http_require(
         auth,
@@ -632,8 +648,11 @@ def _register_runtime_routes(
         activate_trace_context(context)
         try:
             authorization = websocket.headers.get("authorization")
+            ticket = websocket.query_params.get("ticket")
             token = websocket.query_params.get("access_token")
-            if authorization:
+            if ticket and ticket_manager is not None:
+                principal = ticket_manager.consume(ticket)
+            elif authorization:
                 principal = auth.authenticate_bearer(authorization)
             else:
                 principal = auth.authenticate_token(token)

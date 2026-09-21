@@ -1,0 +1,82 @@
+#+TITLE: Video Pose Realtime WebSocket Ticket
+#+SUBTITLE: One-time Short-lived Browser Realtime Authentication
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Problem
+
+A browser WebSocket cannot attach an arbitrary Authorization header.
+
+Putting the long-lived Bearer Token in a WebSocket query string would expose a valuable credential to URL and reverse-proxy logs.
+
+* 2. Ticket Flow
+
+#+BEGIN_SRC text
+Browser
+  |
+  | Authorization: Bearer <long-lived token>
+  v
+POST /api/v1/auth/realtime-ticket
+  |
+  | one-time random ticket, 30 s TTL
+  v
+WS /api/v1/realtime?ticket=<short-lived ticket>
+  |
+  | consume ticket immediately
+  v
+Realtime stream
+#+END_SRC
+
+* 3. Ticket Properties
+
+RealtimeTicketManager:
+
+- uses cryptographically random token_urlsafe material.
+- stores only SHA-256 of the ticket in memory.
+- default TTL = 30 seconds.
+- ticket is one-time.
+- successful or attempted consume removes it.
+- expired tickets are cleaned opportunistically.
+- maximum outstanding tickets is bounded.
+
+The stored ticket record contains the already-authenticated AuthPrincipal.
+
+* 4. Permission
+
+Ticket issuance requires:
+
+#+BEGIN_SRC text
+realtime:read
+#+END_SRC
+
+The consumed principal is checked again for =realtime:read= before WebSocket accept.
+
+* 5. Compatibility
+
+Existing WebSocket authentication remains supported:
+
+- Authorization header for non-browser clients.
+- legacy =access_token= query parameter.
+
+The Edge Console uses only the short-lived =ticket= flow.
+
+* 6. Console Realtime Behavior
+
+Console 0.53:
+
+- uses REST polling for slow-changing system state.
+- uses WebSocket push to trigger immediate refresh of:
+  - current evaluation.
+  - runtime health.
+  - current Session.
+- automatically obtains a fresh ticket when reconnecting.
+
+The long-lived Bearer Token remains in page memory and never enters the WebSocket URL.
+
+* 7. Logging Boundary
+
+The one-time ticket can still appear in a proxy request URL if the proxy logs query strings.
+
+Its risk is reduced by the short TTL and one-time consumption.
+
+Production reverse proxies should still avoid logging WebSocket query strings where practical.

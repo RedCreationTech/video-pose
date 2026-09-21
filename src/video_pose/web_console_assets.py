@@ -210,6 +210,9 @@ var state = {
   snapshots: new Map(),
   evidenceUrls: new Map(),
   selectedSessionId: null,
+  socket: null,
+  realtimeRetry: null,
+  realtimeRefresh: null,
   timer: null,
   tick: 0
 };
@@ -298,6 +301,7 @@ async function connect() {
     applyPermissions();
     await refreshAll(true);
     startPolling();
+    startRealtime();
     showNotice("已连接: " + (state.principal.subject || "development"), false);
   } catch (error) {
     state.connected = false;
@@ -313,6 +317,7 @@ function disconnect(message) {
   el("connectionBadge").className = "badge neutral";
   el("roleBadge").textContent = "-";
   stopPolling();
+  stopRealtime();
   revokeSnapshots();
   applyPermissions();
   showNotice(message || "已断开.", true);
@@ -326,6 +331,66 @@ function startPolling() {
 function stopPolling() {
   if (state.timer) clearInterval(state.timer);
   state.timer = null;
+}
+function stopRealtime() {
+  if (state.realtimeRetry) clearTimeout(state.realtimeRetry);
+  if (state.realtimeRefresh) clearTimeout(state.realtimeRefresh);
+  state.realtimeRetry = null;
+  state.realtimeRefresh = null;
+  if (state.socket) {
+    state.socket.onclose = null;
+    state.socket.close();
+  }
+  state.socket = null;
+}
+async function startRealtime() {
+  if (!state.connected || !can("realtime:read")) return;
+  stopRealtime();
+  try {
+    var issued = await api("/api/v1/auth/realtime-ticket", {method:"POST"});
+    var scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+    var url = scheme + "//" + window.location.host +
+      "/api/v1/realtime?ticket=" + encodeURIComponent(issued.ticket);
+    var socket = new WebSocket(url);
+    state.socket = socket;
+    socket.onopen = function () {
+      el("connectionBadge").textContent = "已连接 · 实时";
+    };
+    socket.onmessage = function (event) {
+      try {
+        var envelope = JSON.parse(event.data);
+        if (envelope.type === "runtime.update") {
+          scheduleRealtimeRefresh();
+        }
+      } catch (_) {}
+    };
+    socket.onclose = function () {
+      if (!state.connected) return;
+      el("connectionBadge").textContent = "已连接 · 重连实时";
+      state.realtimeRetry = setTimeout(startRealtime, 1500);
+    };
+    socket.onerror = function () {
+      socket.close();
+    };
+  } catch (error) {
+    if (state.connected) {
+      state.realtimeRetry = setTimeout(startRealtime, 2500);
+    }
+  }
+}
+function scheduleRealtimeRefresh() {
+  if (state.realtimeRefresh) return;
+  state.realtimeRefresh = setTimeout(async function () {
+    state.realtimeRefresh = null;
+    var results = await Promise.all([
+      optionalApi("/api/v1/sessions/current/evaluation", "session:read"),
+      optionalApi("/api/v1/runtime/health", "runtime:read"),
+      optionalApi("/api/v1/sessions/current", "session:read")
+    ]);
+    renderEvaluation(results[0]);
+    if (results[1]) renderHealth(results[1]);
+    renderSession(results[2]);
+  }, 80);
 }
 async function refreshAll(forceSnapshots) {
   if (!state.connected || state.refreshing) return;
@@ -877,6 +942,7 @@ window.addEventListener("DOMContentLoaded", function () {
 });
 window.addEventListener("beforeunload", function () {
   stopPolling();
+  stopRealtime();
   revokeSnapshots();
   revokeEvidenceUrls();
 });"""
