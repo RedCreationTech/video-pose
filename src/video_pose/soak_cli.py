@@ -82,6 +82,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=5.0,
     )
+    parser.add_argument(
+        "--max-audit-write-errors",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--allow-audit-degraded",
+        action="store_true",
+    )
     return parser
 
 
@@ -109,6 +118,10 @@ def main() -> int:
         ),
         min_storage_free_ratio=args.min_storage_free_ratio,
         min_storage_free_gb=args.min_storage_free_gb,
+        max_audit_write_errors=args.max_audit_write_errors,
+        fail_on_audit_degraded=(
+            not args.allow_audit_degraded
+        ),
     )
     monitor = SoakMonitor(thresholds)
     runtime = build_live_runtime(

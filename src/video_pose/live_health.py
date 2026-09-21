@@ -83,6 +83,13 @@ class EvidenceHealthSnapshot(BaseModel):
     over_capacity: bool = False
 
 
+class AuditHealthSnapshot(BaseModel):
+    status: str = "READY"
+    write_errors_total: int = 0
+    last_error: str | None = None
+    last_success_at: str | None = None
+
+
 class StorageHealthSnapshot(BaseModel):
     name: str
     configured_path: str
@@ -98,6 +105,7 @@ class LiveHealthSnapshot(BaseModel):
     runtime: RuntimeHealthSnapshot
     sync: SyncHealthSnapshot | None = None
     evidence: EvidenceHealthSnapshot | None = None
+    audit: AuditHealthSnapshot | None = None
     storage: list[StorageHealthSnapshot] = Field(default_factory=list)
     ready: bool
 

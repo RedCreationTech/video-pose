@@ -44,6 +44,7 @@ class SessionQualityMonitor:
         self._evidence_base_submitted: int | None = None
         self._evidence_base_dropped: int | None = None
         self._evidence_base_errors: int | None = None
+        self._audit_base_errors: int | None = None
 
     def observe(
         self,
@@ -76,6 +77,13 @@ class SessionQualityMonitor:
         if self.config.monitor_evidence:
             output.extend(
                 self._evidence_incidents(
+                    snapshot,
+                    now_monotonic_ms=now_monotonic_ms,
+                )
+            )
+        if self.config.monitor_audit:
+            output.extend(
+                self._audit_incidents(
                     snapshot,
                     now_monotonic_ms=now_monotonic_ms,
                 )
@@ -390,6 +398,56 @@ class SessionQualityMonitor:
         )
         return [violation] if violation is not None else []
 
+    def _audit_incidents(
+        self,
+        snapshot: LiveHealthSnapshot,
+        *,
+        now_monotonic_ms: float,
+    ) -> list[Violation]:
+        audit = snapshot.audit
+        reasons: list[str] = []
+        actual: dict[str, Any] = {}
+        if audit is None:
+            reasons.append("audit health unavailable")
+        else:
+            if self._audit_base_errors is None:
+                self._audit_base_errors = audit.write_errors_total
+            base_errors = self._audit_base_errors or 0
+            errors = max(
+                0,
+                audit.write_errors_total - base_errors,
+            )
+            actual.update(
+                {
+                    "status": audit.status,
+                    "write_errors_delta": errors,
+                    "last_error": audit.last_error,
+                }
+            )
+            if audit.status != "READY":
+                reasons.append(f"status={audit.status}")
+            if errors > self.config.max_audit_error_delta:
+                reasons.append(f"errors={errors}")
+
+        violation = self._condition_violation(
+            "audit",
+            failed=bool(reasons),
+            now_monotonic_ms=now_monotonic_ms,
+            grace_ms=self.config.audit_grace_ms,
+            message=(
+                "immutable audit write quality degraded: "
+                + ", ".join(reasons)
+            ),
+            expected={
+                "status": "READY",
+                "max_error_delta": (
+                    self.config.max_audit_error_delta
+                ),
+            },
+            actual=actual,
+        )
+        return [violation] if violation is not None else []
+
     def _condition_violation(
         self,
         key: str,
@@ -407,10 +465,12 @@ class SessionQualityMonitor:
 
         state = self._conditions.get(key)
         if state is None:
-            self._conditions[key] = _ConditionState(
+            state = _ConditionState(
                 first_failed_ms=now_monotonic_ms
             )
-            return None
+            self._conditions[key] = state
+            if grace_ms > 0:
+                return None
         if state.emitted:
             return None
         if now_monotonic_ms - state.first_failed_ms < grace_ms:

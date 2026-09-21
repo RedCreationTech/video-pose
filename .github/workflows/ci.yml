@@ -33,4 +33,5 @@ jobs:
             --scenario fixtures/faults/sync-drift.yaml \
             --scenario fixtures/faults/processing-error.yaml \
             --scenario fixtures/faults/processing-drop.yaml \
-            --scenario fixtures/faults/evidence-pressure.yaml
+            --scenario fixtures/faults/evidence-pressure.yaml \
+            --scenario fixtures/faults/audit-write-failure.yaml

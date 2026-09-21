@@ -13,6 +13,7 @@ from .realtime_rules import RealtimeRuleSession, RuleSessionUpdate
 from .resource_usage import sample_process_resources
 from .runtime_builder import build_analysis_pipeline, build_rule_engine
 from .runtime_config import LoadedAnalysisConfig
+from .session_audit import SessionAuditWriter
 from .session_quality import (
     SessionQualityMonitor,
     SessionQualityUpdate,
@@ -32,6 +33,7 @@ class SessionAnalysisRuntime:
         processing_queue_size: int = 2,
         resource_sample_every: int = 30,
         quality_monitor: SessionQualityMonitor | None = None,
+        audit_writer: SessionAuditWriter | None = None,
     ) -> None:
         if processing_queue_size < 1:
             raise ValueError("processing_queue_size must be >= 1")
@@ -43,6 +45,7 @@ class SessionAnalysisRuntime:
         self.health = hub.health
         self.resource_sample_every = resource_sample_every
         self.quality_monitor = quality_monitor
+        self.audit_writer = audit_writer
         self._processed_since_resource_sample = 0
         self._last_timestamp_ms = 0
         self._callback: Callable[
@@ -54,6 +57,7 @@ class SessionAnalysisRuntime:
         )
         self._worker: threading.Thread | None = None
         self._quality_worker: threading.Thread | None = None
+        self._quality_poll_lock = threading.Lock()
         self._stop = threading.Event()
         self._subscription_token: str | None = None
 
@@ -141,22 +145,27 @@ class SessionAnalysisRuntime:
         return self.rule_session.finish(self._last_timestamp_ms)
 
     def health_snapshot(self):
-        return self.hub.health_snapshot()
-
-    def _run_quality_monitor(self) -> None:
-        assert self.quality_monitor is not None
-        interval_s = (
-            self.quality_monitor.config.poll_interval_ms
-            / 1000.0
+        snapshot = self.hub.health_snapshot()
+        if self.audit_writer is None:
+            return snapshot
+        return snapshot.model_copy(
+            update={"audit": self.audit_writer.health()}
         )
-        while not self._stop.is_set():
+
+    def poll_quality_once(
+        self,
+    ) -> tuple[SessionQualityUpdate, ...]:
+        if self.quality_monitor is None:
+            return ()
+        with self._quality_poll_lock:
             now_monotonic_ms = (
                 time.monotonic_ns() / 1_000_000.0
             )
             incidents = self.quality_monitor.observe(
-                self.hub.health_snapshot(),
+                self.health_snapshot(),
                 now_monotonic_ms=now_monotonic_ms,
             )
+            output: list[SessionQualityUpdate] = []
             for violation in incidents:
                 timestamp_ms = max(0, round(self._last_timestamp_ms))
                 rule_update = (
@@ -165,13 +174,23 @@ class SessionAnalysisRuntime:
                         now_ms=timestamp_ms,
                     )
                 )
+                update = SessionQualityUpdate(
+                    timestamp_ms=timestamp_ms,
+                    rule_update=rule_update,
+                )
+                output.append(update)
                 if self._callback is not None:
-                    self._callback(
-                        SessionQualityUpdate(
-                            timestamp_ms=timestamp_ms,
-                            rule_update=rule_update,
-                        )
-                    )
+                    self._callback(update)
+            return tuple(output)
+
+    def _run_quality_monitor(self) -> None:
+        assert self.quality_monitor is not None
+        interval_s = (
+            self.quality_monitor.config.poll_interval_ms
+            / 1000.0
+        )
+        while not self._stop.is_set():
+            self.poll_quality_once()
             self._stop.wait(interval_s)
 
     def _run_processing(self) -> None:
@@ -211,6 +230,7 @@ def build_session_analysis_runtime(
     session_id: str,
     processing_queue_size: int = 2,
     model_pool: PersistentModelPool | None = None,
+    audit_writer: SessionAuditWriter | None = None,
 ) -> SessionAnalysisRuntime:
     pipeline = build_analysis_pipeline(
         config,
@@ -240,4 +260,5 @@ def build_session_analysis_runtime(
         rule_session=rule_session,
         processing_queue_size=processing_queue_size,
         quality_monitor=quality_monitor,
+        audit_writer=audit_writer,
     )

@@ -130,6 +130,9 @@ class SessionQualityRuntimeConfig(BaseModel):
         le=1.0,
     )
     block_evidence_over_capacity: bool = True
+    monitor_audit: bool = False
+    audit_grace_ms: int = Field(default=0, ge=0)
+    max_audit_error_delta: int = Field(default=0, ge=0)
     severity: Literal["MINOR", "MAJOR", "CRITICAL"] = "CRITICAL"
 
 
@@ -160,6 +163,7 @@ class SessionReadinessRuntimeConfig(BaseModel):
     block_evidence_errors: bool = True
     require_persistence: bool = False
     block_persistence_degraded: bool = False
+    block_audit_degraded: bool = False
     require_runtime_assets: bool = True
     require_storage_headroom: bool = True
     min_storage_free_ratio: float = Field(

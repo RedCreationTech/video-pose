@@ -182,6 +182,21 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
             ]
         )
 
+    audit = snapshot.audit
+    if audit is not None:
+        lines.extend(
+            [
+                _metric(
+                    "video_pose_audit_ready",
+                    1 if audit.status == "READY" else 0,
+                ),
+                _metric(
+                    "video_pose_audit_write_errors_total",
+                    audit.write_errors_total,
+                ),
+            ]
+        )
+
     for storage in snapshot.storage:
         labels = {"name": storage.name}
         lines.extend(

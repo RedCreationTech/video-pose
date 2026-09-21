@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .live_health import AuditHealthSnapshot
+
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -43,21 +45,56 @@ class SessionAuditMetadata(BaseModel):
 
 
 class SessionAuditWriter:
-    """Durable JSON/JSONL audit writer for one operation session."""
+    """Durable JSON/JSONL audit writer with observable write health."""
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._write_errors_total = 0
+        self._last_error: str | None = None
+        self._last_success_at: str | None = None
+
+    def health(self) -> AuditHealthSnapshot:
+        with self._lock:
+            return AuditHealthSnapshot(
+                status=(
+                    "DEGRADED"
+                    if self._last_error is not None
+                    else "READY"
+                ),
+                write_errors_total=self._write_errors_total,
+                last_error=self._last_error,
+                last_success_at=self._last_success_at,
+            )
+
+    def probe(self) -> AuditHealthSnapshot:
+        with self._lock:
+            probe = self.root / ".video-pose-audit-probe"
+            try:
+                self.root.mkdir(parents=True, exist_ok=True)
+                probe.write_text("ok\n", encoding="utf-8")
+                probe.unlink(missing_ok=True)
+            except Exception as exc:
+                self._record_error_unlocked(exc)
+                raise
+            self._record_success_unlocked()
+            return self.health()
 
     def start(self, metadata: SessionAuditMetadata) -> Path:
         directory = self.root / metadata.session_id
-        directory.mkdir(parents=True, exist_ok=False)
-        self._write_json(
-            directory / "metadata.json",
-            metadata.model_dump(mode="json"),
-        )
-        (directory / "updates.jsonl").touch()
-        (directory / "reviews.jsonl").touch()
+        with self._lock:
+            try:
+                directory.mkdir(parents=True, exist_ok=False)
+                self._write_json_unlocked(
+                    directory / "metadata.json",
+                    metadata.model_dump(mode="json"),
+                )
+                (directory / "updates.jsonl").touch()
+                (directory / "reviews.jsonl").touch()
+            except Exception as exc:
+                self._record_error_unlocked(exc)
+                raise
+            self._record_success_unlocked()
         return directory
 
     def append_payload(
@@ -76,8 +113,13 @@ class SessionAuditWriter:
             separators=(",", ":"),
         )
         with self._lock:
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(rendered + "\n")
+            try:
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(rendered + "\n")
+            except Exception as exc:
+                self._record_error_unlocked(exc)
+                raise
+            self._record_success_unlocked()
 
     def append_review(
         self,
@@ -95,8 +137,13 @@ class SessionAuditWriter:
             separators=(",", ":"),
         )
         with self._lock:
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(rendered + "\n")
+            try:
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(rendered + "\n")
+            except Exception as exc:
+                self._record_error_unlocked(exc)
+                raise
+            self._record_success_unlocked()
 
     def finish(
         self,
@@ -111,11 +158,17 @@ class SessionAuditWriter:
             "ended_at": _utc_now(),
             "result": final_payload,
         }
-        self._write_json(path, payload)
+        with self._lock:
+            try:
+                self._write_json_unlocked(path, payload)
+            except Exception as exc:
+                self._record_error_unlocked(exc)
+                raise
+            self._record_success_unlocked()
         return path
 
-    def _write_json(
-        self,
+    @staticmethod
+    def _write_json_unlocked(
         path: Path,
         payload: dict[str, Any],
     ) -> None:
@@ -124,5 +177,12 @@ class SessionAuditWriter:
             ensure_ascii=False,
             indent=2,
         )
-        with self._lock:
-            path.write_text(rendered + "\n", encoding="utf-8")
+        path.write_text(rendered + "\n", encoding="utf-8")
+
+    def _record_success_unlocked(self) -> None:
+        self._last_error = None
+        self._last_success_at = _utc_now()
+
+    def _record_error_unlocked(self, exc: Exception) -> None:
+        self._write_errors_total += 1
+        self._last_error = str(exc)

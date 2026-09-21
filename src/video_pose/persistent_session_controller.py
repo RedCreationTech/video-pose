@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import threading
 import uuid
 from collections.abc import Callable
@@ -7,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .contracts import Severity, Violation
 from .live_payload import live_update_payload
 from .live_runtime import LiveAnalysisUpdate
 from .model_pool import PersistentModelPool
@@ -37,6 +39,24 @@ from .violation_review import ViolationReviewRequest
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _accepts_keyword(
+    callback: Callable[..., Any],
+    name: str,
+) -> bool:
+    try:
+        parameters = inspect.signature(callback).parameters
+    except (TypeError, ValueError):
+        return False
+    return (
+        name in parameters
+        or any(
+            parameter.kind
+            == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+    )
 
 
 class PersistentLiveSessionController:
@@ -120,6 +140,11 @@ class PersistentLiveSessionController:
             }
             if self.model_pool is not None:
                 runtime_kwargs["model_pool"] = self.model_pool
+            if _accepts_keyword(
+                self.runtime_factory,
+                "audit_writer",
+            ):
+                runtime_kwargs["audit_writer"] = self.audit
             runtime = self.runtime_factory(
                 self.config,
                 **runtime_kwargs,
@@ -210,6 +235,7 @@ class PersistentLiveSessionController:
             model_pool=self.model_pool,
             repository=self.repository,
             audit_root=self.audit.root,
+            audit_writer=self.audit,
         )
 
     def current(self) -> ManagedSessionState | None:
@@ -236,10 +262,11 @@ class PersistentLiveSessionController:
         snapshot = self.hub.health_snapshot()
         return snapshot.model_copy(
             update={
+                "audit": self.audit.health(),
                 "storage": sample_runtime_storage(
                     self.config,
                     audit_root=self.audit.root,
-                )
+                ),
             }
         )
 
@@ -453,7 +480,13 @@ class PersistentLiveSessionController:
             return
 
         payload = live_update_payload(update)
-        self.audit.append_payload(state.session_id, payload)
+        try:
+            self.audit.append_payload(
+                state.session_id,
+                payload,
+            )
+        except Exception:
+            pass
         schedule_evidence = getattr(
             self.hub,
             "schedule_evidence",
@@ -474,17 +507,20 @@ class PersistentLiveSessionController:
                         timestamp_ms=timestamp_ms,
                     )
                     if evidence_id is not None:
-                        self.audit.append_payload(
-                            state.session_id,
-                            {
-                                "evidence_scheduled": {
-                                    "evidence_id": evidence_id,
-                                    "rule_id": violation.rule_id,
-                                    "step": violation.step,
-                                    "event_id": violation.event_id,
-                                }
-                            },
-                        )
+                        try:
+                            self.audit.append_payload(
+                                state.session_id,
+                                {
+                                    "evidence_scheduled": {
+                                        "evidence_id": evidence_id,
+                                        "rule_id": violation.rule_id,
+                                        "step": violation.step,
+                                        "event_id": violation.event_id,
+                                    }
+                                },
+                            )
+                        except Exception:
+                            pass
         if self.repository is not None:
             self.repository.record_update(state.session_id, payload)
         if callback is not None:
@@ -502,6 +538,18 @@ class PersistentLiveSessionController:
             if self._state.session_id != session_id:
                 raise ValueError("session_id does not match active session")
             runtime = self._runtime
+
+        try:
+            self.audit.probe()
+        except Exception:
+            pass
+        poll_quality = getattr(
+            runtime,
+            "poll_quality_once",
+            None,
+        )
+        if callable(poll_quality):
+            poll_quality()
 
         final = runtime.stop()
         latest_frame_set_method = getattr(
@@ -533,11 +581,91 @@ class PersistentLiveSessionController:
                 )
         ended_at = _utc_now()
         final_payload = final.model_dump(mode="json")
-        self.audit.finish(
-            session_id,
-            final_payload,
-            status=status.value,
-        )
+        audit_finish_error: Exception | None = None
+        try:
+            self.audit.finish(
+                session_id,
+                final_payload,
+                status=status.value,
+            )
+        except Exception as exc:
+            audit_finish_error = exc
+
+        if audit_finish_error is not None:
+            audit_violation = Violation(
+                rule_id="SYSTEM-QUALITY-AUDIT",
+                step="SYSTEM",
+                type="SYSTEM_QUALITY",
+                severity=Severity.CRITICAL,
+                message="immutable audit finalization failed",
+                event_id=f"quality-audit-finalize-{session_id}",
+                confidence=1.0,
+                expected={"status": "READY"},
+                actual={"error": str(audit_finish_error)},
+            )
+            violations = [
+                *final.result.violations,
+                audit_violation,
+            ]
+            result = final.result.model_copy(
+                update={
+                    "violations": violations,
+                    "score": runtime.rule_session.engine.score_violations(
+                        violations
+                    ),
+                    "passed": False,
+                }
+            )
+            final = final.model_copy(
+                update={
+                    "result": result,
+                    "new_violations": [
+                        *final.new_violations,
+                        audit_violation,
+                    ],
+                }
+            )
+            final_payload = final.model_dump(mode="json")
+            if self.repository is not None:
+                self.repository.record_update(
+                    session_id,
+                    {
+                        "timestamp_ms": final_timestamp_ms,
+                        "actions": [],
+                        "quality_update": True,
+                        "rule_updates": [
+                            {
+                                "new_violations": [
+                                    audit_violation.model_dump(
+                                        mode="json"
+                                    )
+                                ],
+                                "changed_steps": [],
+                                "score": result.score,
+                                "passed": result.passed,
+                            }
+                        ],
+                    },
+                )
+            if callable(schedule_evidence):
+                schedule_evidence(
+                    session_id,
+                    audit_violation.model_dump(mode="json"),
+                    timestamp_ms=final_timestamp_ms,
+                )
+            with self._lock:
+                callback = self._event_callback
+            if callback is not None:
+                callback(
+                    SessionQualityUpdate(
+                        timestamp_ms=round(final_timestamp_ms),
+                        rule_update=RuleSessionUpdate(
+                            result=result,
+                            new_violations=[audit_violation],
+                        ),
+                    )
+                )
+
         if self.repository is not None:
             self.repository.finalize(
                 session_id,

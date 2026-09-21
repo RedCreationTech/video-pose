@@ -38,6 +38,8 @@ class SoakThresholds(BaseModel):
         le=1.0,
     )
     min_storage_free_gb: float = Field(default=5.0, ge=0.0)
+    max_audit_write_errors: int = Field(default=0, ge=0)
+    fail_on_audit_degraded: bool = True
 
 
 class SoakSample(BaseModel):
@@ -71,6 +73,8 @@ class SoakReport(BaseModel):
     max_abs_sync_drift_ms_per_minute: float | None
     min_storage_free_ratio: float | None
     min_storage_free_bytes: int | None
+    audit_write_errors_total: int | None
+    audit_degraded: bool | None
     passed: bool
     failures: list[str]
 
@@ -201,6 +205,16 @@ class SoakMonitor:
             else None
         )
 
+        audit = latest.audit
+        audit_write_errors_total = (
+            audit.write_errors_total if audit is not None else None
+        )
+        audit_degraded = (
+            audit.status != "READY"
+            if audit is not None
+            else None
+        )
+
         failures: list[str] = []
         thresholds = self.thresholds
         if ready_ratio < thresholds.min_ready_ratio:
@@ -281,6 +295,24 @@ class SoakMonitor:
                     f"{thresholds.max_abs_sync_drift_ms_per_minute:.6f}"
                 )
 
+        if audit is not None:
+            if (
+                audit.write_errors_total
+                > thresholds.max_audit_write_errors
+            ):
+                failures.append(
+                    "audit_write_errors_total="
+                    f"{audit.write_errors_total} "
+                    f"> {thresholds.max_audit_write_errors}"
+                )
+            if (
+                thresholds.fail_on_audit_degraded
+                and audit.status != "READY"
+            ):
+                failures.append(
+                    f"audit_status={audit.status}"
+                )
+
         if min_storage_ratio is not None:
             if (
                 min_storage_ratio
@@ -348,6 +380,8 @@ class SoakMonitor:
             max_abs_sync_drift_ms_per_minute=max_abs_sync_drift,
             min_storage_free_ratio=min_storage_ratio,
             min_storage_free_bytes=min_storage_bytes,
+            audit_write_errors_total=audit_write_errors_total,
+            audit_degraded=audit_degraded,
             passed=not failures,
             failures=failures,
         )

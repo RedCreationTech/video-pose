@@ -94,6 +94,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=5.0,
     )
+    parser.add_argument(
+        "--max-audit-write-errors",
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "--allow-audit-degraded",
+        action="store_true",
+    )
 
     parser.add_argument(
         "--max-session-start-errors",
@@ -146,6 +155,10 @@ def _health_thresholds(args: argparse.Namespace) -> SoakThresholds:
         ),
         min_storage_free_ratio=args.min_storage_free_ratio,
         min_storage_free_gb=args.min_storage_free_gb,
+        max_audit_write_errors=args.max_audit_write_errors,
+        fail_on_audit_degraded=(
+            not args.allow_audit_degraded
+        ),
     )
 
 

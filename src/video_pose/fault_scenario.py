@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .contracts import ReplayResult, Violation
 from .live_health import (
+    AuditHealthSnapshot,
     CameraHealthSnapshot,
     CameraState,
     EvidenceHealthSnapshot,
@@ -50,6 +51,12 @@ class FaultEvidenceState(BaseModel):
     over_capacity: bool = False
 
 
+class FaultAuditState(BaseModel):
+    status: str = "READY"
+    write_errors_total: int = Field(default=0, ge=0)
+    last_error: str | None = None
+
+
 class FaultStep(BaseModel):
     at_ms: float = Field(ge=0.0)
     cameras: dict[str, FaultCameraState] = Field(
@@ -58,6 +65,7 @@ class FaultStep(BaseModel):
     sync: FaultSyncState | None = None
     runtime: FaultRuntimeState | None = None
     evidence: FaultEvidenceState | None = None
+    audit: FaultAuditState | None = None
 
 
 class FaultExpectation(BaseModel):
@@ -118,6 +126,7 @@ class FaultScenarioRunner:
         self._sync: FaultSyncState | None = None
         self._runtime = FaultRuntimeState()
         self._evidence: FaultEvidenceState | None = None
+        self._audit: FaultAuditState | None = None
 
     def run(self) -> FaultScenarioEvaluation:
         for step in self.scenario.steps:
@@ -166,6 +175,8 @@ class FaultScenarioRunner:
             self._runtime = step.runtime
         if step.evidence is not None:
             self._evidence = step.evidence
+        if step.audit is not None:
+            self._audit = step.audit
 
     def _snapshot(self, at_ms: float) -> LiveHealthSnapshot:
         cameras = [
@@ -215,6 +226,15 @@ class FaultScenarioRunner:
             if self._evidence is not None
             else None
         )
+        audit = (
+            AuditHealthSnapshot(
+                status=self._audit.status,
+                write_errors_total=self._audit.write_errors_total,
+                last_error=self._audit.last_error,
+            )
+            if self._audit is not None
+            else None
+        )
         return LiveHealthSnapshot(
             cameras=cameras,
             runtime=RuntimeHealthSnapshot(
@@ -222,6 +242,7 @@ class FaultScenarioRunner:
             ),
             sync=sync,
             evidence=evidence,
+            audit=audit,
             ready=ready,
         )
 

@@ -101,6 +101,7 @@ def evaluate_session_readiness(
     model_pool: Any | None,
     repository: Any | None,
     audit_root: str | Path | None = None,
+    audit_writer: Any | None = None,
 ) -> SessionReadinessReport:
     policy = config.config.readiness
     if not policy.enabled:
@@ -404,6 +405,31 @@ def evaluate_session_readiness(
                 (
                     f"free_gb={free_gb:.3f}, "
                     f"min={policy.min_storage_free_gb:.3f}"
+                ),
+            )
+
+    if policy.block_audit_degraded:
+        if audit_writer is None:
+            _check(
+                checks,
+                "audit-health",
+                False,
+                "audit writer is unavailable",
+            )
+        else:
+            try:
+                audit_writer.probe()
+            except Exception:
+                pass
+            audit_health = audit_writer.health()
+            _check(
+                checks,
+                "audit-health",
+                audit_health.status == "READY",
+                (
+                    f"status={audit_health.status}, "
+                    f"errors={audit_health.write_errors_total}, "
+                    f"last_error={audit_health.last_error}"
                 ),
             )
 
