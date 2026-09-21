@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 import secrets
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Iterator
 
 from pydantic import BaseModel
 
