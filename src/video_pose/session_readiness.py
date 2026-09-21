@@ -84,6 +84,9 @@ def _asset_check(
 def _persistence_status(repository: Any) -> tuple[str, str]:
     if repository is None:
         return "DISABLED", "repository is not configured"
+    probe_method = getattr(repository, "probe", None)
+    if callable(probe_method):
+        probe_method()
     health_method = getattr(repository, "health", None)
     if not callable(health_method):
         return "READY", "repository has no degraded health interface"

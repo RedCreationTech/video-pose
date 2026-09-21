@@ -32,6 +32,7 @@ class ResilientSessionStore:
         self._write_errors_total = 0
         self._read_errors_total = 0
         self._last_error: str | None = None
+        self._status = PersistenceStatus.READY
 
     def create_schema(self) -> None:
         try:
@@ -161,18 +162,18 @@ class ResilientSessionStore:
             self._mark_write_error(exc)
             return None
 
+    def probe(self) -> PersistenceHealth:
+        try:
+            self.store.list_sessions(1)
+            self._mark_success()
+        except Exception as exc:
+            self._mark_read_error(exc)
+        return self.health()
+
     def health(self) -> PersistenceHealth:
         with self._lock:
-            degraded = (
-                self._write_errors_total > 0
-                or self._read_errors_total > 0
-            )
             return PersistenceHealth(
-                status=(
-                    PersistenceStatus.DEGRADED
-                    if degraded
-                    else PersistenceStatus.READY
-                ),
+                status=self._status,
                 write_errors_total=self._write_errors_total,
                 read_errors_total=self._read_errors_total,
                 last_error=self._last_error,
@@ -180,14 +181,17 @@ class ResilientSessionStore:
 
     def _mark_success(self) -> None:
         with self._lock:
+            self._status = PersistenceStatus.READY
             self._last_error = None
 
     def _mark_write_error(self, exc: Exception) -> None:
         with self._lock:
+            self._status = PersistenceStatus.DEGRADED
             self._write_errors_total += 1
             self._last_error = str(exc)
 
     def _mark_read_error(self, exc: Exception) -> None:
         with self._lock:
+            self._status = PersistenceStatus.DEGRADED
             self._read_errors_total += 1
             self._last_error = str(exc)

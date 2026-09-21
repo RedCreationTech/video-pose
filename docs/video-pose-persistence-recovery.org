@@ -1,0 +1,54 @@
+#+TITLE: Video Pose Persistence Recovery Semantics
+#+SUBTITLE: Recoverable DEGRADED State with Cumulative Error Counters
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Problem
+
+The SQL query store is secondary to immutable JSONL Audit.
+
+A transient PostgreSQL outage should:
+
+- degrade query-store health.
+- keep current Session processing/audit alive.
+- block new formal Sessions while the database is still unavailable.
+- automatically recover readiness after PostgreSQL returns.
+
+The previous health calculation treated any historical error counter as permanently DEGRADED.
+
+* 2. Current status vs history
+
+=ResilientSessionStore= now separates:
+
+- current status: READY or DEGRADED.
+- cumulative write_errors_total.
+- cumulative read_errors_total.
+- last_error.
+
+Successful database operations return current status to READY without resetting counters.
+
+* 3. Probe
+
+New:
+
+#+BEGIN_SRC text
+ResilientSessionStore.probe()
+#+END_SRC
+
+It performs a small =list_sessions(1)= query against the underlying store.
+
+Readiness calls the probe when available.
+
+Therefore a repaired database can automatically unlock new Session starts without restarting the Edge process.
+
+* 4. Semantics
+
+A failed probe increments cumulative read_errors_total and keeps DEGRADED.
+
+A successful probe:
+
+- status -> READY.
+- last_error -> null.
+- historical error counters stay unchanged.
+
+This preserves operational evidence while accurately representing current availability.
