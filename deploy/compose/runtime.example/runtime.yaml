@@ -60,6 +60,7 @@ readiness:
   block_evidence_errors: true
   require_persistence: true
   block_persistence_degraded: true
+  require_persistence_reconciled: true
   block_audit_degraded: true
   require_runtime_assets: true
   require_storage_headroom: true

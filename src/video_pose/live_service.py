@@ -272,6 +272,23 @@ def create_managed_live_app(
     ) -> dict[str, Any]:
         return controller.persistence_health()
 
+    @app.post("/api/v1/runtime/persistence/reconcile")
+    def reconcile_persistence(
+        _principal: Any = Depends(
+            require(Permission.PERSISTENCE_REPAIR)
+        ),
+    ) -> Any:
+        method = getattr(controller, "reconcile_persistence", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="persistence reconciliation is unavailable",
+            )
+        try:
+            return method()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.get("/api/v1/sessions/{session_id}/evidence")
     def list_evidence(
         session_id: str,

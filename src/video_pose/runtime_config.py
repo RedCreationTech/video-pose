@@ -163,6 +163,7 @@ class SessionReadinessRuntimeConfig(BaseModel):
     block_evidence_errors: bool = True
     require_persistence: bool = False
     block_persistence_degraded: bool = False
+    require_persistence_reconciled: bool = False
     block_audit_degraded: bool = False
     require_runtime_assets: bool = True
     require_storage_headroom: bool = True

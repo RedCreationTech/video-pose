@@ -5,7 +5,6 @@ import argparse
 from .auth import AuthManager
 from .live_service import create_managed_live_app
 from .model_pool import build_persistent_model_pool
-from .persistence_reconcile import reconcile_audit_root
 from .persistent_camera import build_persistent_camera_hub
 from .persistent_session_controller import PersistentLiveSessionController
 from .resilient_store import ResilientSessionStore
@@ -63,10 +62,10 @@ def main() -> int:
         sql_repository = SQLAlchemySessionRepository(
             args.database_url
         )
+        repository = ResilientSessionStore(sql_repository)
         if args.reconcile_on_start:
-            reconciliation = reconcile_audit_root(
-                args.audit_dir,
-                sql_repository,
+            reconciliation = repository.reconcile(
+                args.audit_dir
             )
             if reconciliation.failed_count:
                 raise RuntimeError(
@@ -77,7 +76,6 @@ def main() -> int:
                         if item.action == "FAILED"
                     )
                 )
-        repository = ResilientSessionStore(sql_repository)
 
     hub = build_persistent_camera_hub(
         loaded,

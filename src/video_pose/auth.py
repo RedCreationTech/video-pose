@@ -25,6 +25,7 @@ class Permission(StrEnum):
     SESSION_START = "session:start"
     SESSION_CONTROL = "session:control"
     PERSISTENCE_READ = "persistence:read"
+    PERSISTENCE_REPAIR = "persistence:repair"
     METRICS_READ = "metrics:read"
     REALTIME_READ = "realtime:read"
     VIOLATION_REVIEW = "violation:review"
@@ -41,6 +42,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.SESSION_START,
             Permission.SESSION_CONTROL,
             Permission.PERSISTENCE_READ,
+            Permission.PERSISTENCE_REPAIR,
             Permission.METRICS_READ,
             Permission.REALTIME_READ,
             Permission.EVIDENCE_READ,

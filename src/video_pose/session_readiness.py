@@ -454,6 +454,51 @@ def evaluate_session_readiness(
             persistence_detail,
         )
 
+    if policy.require_persistence_reconciled:
+        if repository is None:
+            _check(
+                checks,
+                "persistence-reconciliation",
+                False,
+                "repository is not configured",
+            )
+        else:
+            method = getattr(
+                repository,
+                "reconciliation_health",
+                None,
+            )
+            if not callable(method):
+                _check(
+                    checks,
+                    "persistence-reconciliation",
+                    False,
+                    "reconciliation health is unavailable",
+                )
+            else:
+                reconciliation = method()
+                raw_status = getattr(
+                    reconciliation,
+                    "status",
+                    "NEVER",
+                )
+                status = getattr(
+                    raw_status,
+                    "value",
+                    str(raw_status),
+                )
+                _check(
+                    checks,
+                    "persistence-reconciliation",
+                    status == "READY",
+                    (
+                        f"status={status}, "
+                        f"failed={reconciliation.failed_count}, "
+                        f"incomplete={reconciliation.incomplete_count}, "
+                        f"last_error={reconciliation.last_error}"
+                    ),
+                )
+
     return SessionReadinessReport(
         policy_enabled=True,
         ready=all(check.passed for check in checks),

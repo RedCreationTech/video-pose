@@ -1,0 +1,93 @@
+#+TITLE: Video Pose Persistence Reconciliation Health
+#+SUBTITLE: Connectivity READY Is Not the Same as Query-store Completeness
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Two independent states
+
+Persistence now has two orthogonal health axes.
+
+** Connectivity
+
+#+BEGIN_SRC text
+READY
+DEGRADED
+#+END_SRC
+
+This answers: can SQL be used now?
+
+** Reconciliation
+
+#+BEGIN_SRC text
+NEVER
+READY
+DIRTY
+RUNNING
+DEGRADED
+#+END_SRC
+
+This answers: is SQL known to contain the complete immutable Audit history?
+
+* 2. DIRTY transition
+
+Any query-store write failure marks reconciliation =DIRTY=.
+
+A later successful connectivity probe can return Persistence to READY, but reconciliation stays DIRTY.
+
+Therefore database recovery cannot silently erase the fact that writes may have been missed.
+
+* 3. READY transition
+
+Only a successful Audit-to-SQL consistency pass with:
+
+#+BEGIN_SRC text
+failed_count = 0
+incomplete_count = 0
+#+END_SRC
+
+sets reconciliation READY.
+
+If incomplete Audit Sessions exist, status remains DIRTY until controlled recovery.
+
+* 4. Production readiness
+
+The Edge runtime template enables:
+
+#+BEGIN_SRC yaml
+require_persistence_reconciled: true
+#+END_SRC
+
+A formal new Session is blocked when reconciliation is not READY.
+
+* 5. Repair API
+
+New protected endpoint:
+
+#+BEGIN_SRC text
+POST /api/v1/runtime/persistence/reconcile
+#+END_SRC
+
+Permission:
+
+#+BEGIN_SRC text
+persistence:repair
+#+END_SRC
+
+Default roles:
+
+- ADMIN.
+- ENGINEER.
+
+Supervisors, reviewers, operators and auditors do not receive mutation permission.
+
+* 6. Operations
+
+=/api/v1/runtime/persistence= returns both connectivity health and reconciliation health.
+
+This makes it possible for a UI to show:
+
+#+BEGIN_SRC text
+Database connectivity: READY
+Historical completeness: DIRTY
+Repair required: yes
+#+END_SRC

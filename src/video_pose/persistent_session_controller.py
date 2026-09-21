@@ -284,6 +284,17 @@ class PersistentLiveSessionController:
             quality=quality,
         )
 
+    def reconcile_persistence(self) -> dict[str, Any]:
+        if self.repository is None:
+            raise RuntimeError("persistence is not configured")
+        method = getattr(self.repository, "reconcile", None)
+        if not callable(method):
+            raise RuntimeError(
+                "persistence reconciliation is unavailable"
+            )
+        report = method(str(self.audit.root))
+        return report.model_dump(mode="json")
+
     def persistence_health(self) -> dict[str, Any]:
         if self.repository is None:
             return {
@@ -299,9 +310,19 @@ class PersistentLiveSessionController:
                 if callable(dump_method)
                 else health
             )
+            reconciliation = None
+            reconcile_health = getattr(
+                self.repository,
+                "reconciliation_health",
+                None,
+            )
+            if callable(reconcile_health):
+                state = reconcile_health()
+                reconciliation = state.model_dump(mode="json")
             return {
                 "configured": True,
                 **payload,
+                "reconciliation": reconciliation,
             }
         return {
             "configured": True,
