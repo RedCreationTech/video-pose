@@ -256,6 +256,23 @@ def _model_release_check(
         )
 
     path = config.resolve(release.manifest)
+    if not path.is_file():
+        return DoctorCheck(
+            name="model-release",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail=f"missing: {path}",
+        )
+    if not release.verify_on_doctor:
+        return DoctorCheck(
+            name="model-release",
+            status=CheckStatus.WARN,
+            required=False,
+            detail=(
+                "model release manifest exists but hash verification "
+                "is disabled"
+            ),
+        )
     try:
         manifest = load_model_release_manifest(path)
         verification = verify_model_release_manifest(manifest)
