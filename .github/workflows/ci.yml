@@ -25,3 +25,9 @@ jobs:
           video-pose-replay \
             --events fixtures/replay/compliant.jsonl \
             --rules fixtures/rules/assembly-a.yaml
+      - name: Fault scenario smoke test
+        run: |
+          video-pose-fault-evaluate \
+            --scenario fixtures/faults/camera-outage.yaml \
+            --scenario fixtures/faults/sync-stall.yaml \
+            --scenario fixtures/faults/sync-drift.yaml

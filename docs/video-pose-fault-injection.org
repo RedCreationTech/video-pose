@@ -1,0 +1,70 @@
+#+TITLE: Video Pose Deterministic Fault Injection
+#+SUBTITLE: Camera Outage, Recovery, Sync Stall and Clock Drift Scenarios
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+Long-running soak tests are necessary but mostly passive.
+
+Fault scenarios deliberately inject health-state failures and assert the resulting compliance semantics.
+
+The first scenario set covers:
+
+- camera outage.
+- camera recovery and re-arm.
+- second camera outage in the same Session.
+- synchronized output stall.
+- excessive clock drift.
+
+* 2. YAML scenario
+
+Each scenario declares:
+
+#+BEGIN_SRC text
+camera ids
+SessionQualityRuntimeConfig
+ordered health steps
+expected violation types/rule ids
+expected final Session passed flag
+#+END_SRC
+
+The runner drives the same =SessionQualityMonitor= and =RealtimeRuleSession= used by production code.
+
+* 3. Command
+
+#+BEGIN_SRC sh
+video-pose-fault-evaluate \
+  --scenario fixtures/faults/camera-outage.yaml \
+  --scenario fixtures/faults/sync-stall.yaml \
+  --scenario fixtures/faults/sync-drift.yaml
+#+END_SRC
+
+Exit code:
+
+- 0, all scenario expectations matched.
+- 2, at least one mismatch.
+
+* 4. CI
+
+The normal GitHub Actions workflow runs the three fault scenarios after Golden Replay.
+
+This creates a small deterministic resilience gate on every =main= change.
+
+* 5. Current semantics
+
+A sustained Camera/Sync failure becomes a CRITICAL =SYSTEM_QUALITY= violation.
+
+The Session remains operational so evidence and recovery can continue, but the final compliance result cannot remain PASS.
+
+* 6. Next fault families
+
+The harness is intentionally health-driven, so additional scenarios can be added without camera hardware:
+
+- processing queue saturation.
+- Evidence queue pressure.
+- storage low-water mark.
+- persistence degraded.
+- calibration health failure before Session start.
+
+Hardware-in-loop fault tests remain part of the 72h site acceptance.

@@ -1,0 +1,43 @@
+scenario_id: sync-stall
+session_id: fault-sync
+rules: ../rules/pick-place.yaml
+camera_ids: []
+
+quality:
+  enabled: true
+  monitor_cameras: false
+  monitor_sync: true
+  poll_interval_ms: 100
+  sync_grace_ms: 1000
+  max_sync_miss_ratio: 0.30
+  max_sync_p99_skew_ms: 30
+  max_abs_sync_drift_ms_per_minute: 3
+  severity: CRITICAL
+
+steps:
+  - at_ms: 0
+    sync:
+      reference_frames_total: 100
+      emitted_total: 95
+      miss_total: 5
+      skew_p99_ms: 8
+      camera_drift_ms_per_minute:
+        front: 0
+        left: 0.2
+
+  - at_ms: 1200
+    sync:
+      reference_frames_total: 100
+      emitted_total: 95
+      miss_total: 5
+      skew_p99_ms: 8
+      camera_drift_ms_per_minute:
+        front: 0
+        left: 0.2
+
+expect:
+  violation_types:
+    - SYSTEM_QUALITY
+  rule_ids:
+    - SYSTEM-QUALITY-SYNC
+  final_session_passed: false

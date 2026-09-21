@@ -1,0 +1,60 @@
+scenario_id: camera-outage-recovery
+session_id: fault-camera
+rules: ../rules/pick-place.yaml
+camera_ids:
+  - front
+
+quality:
+  enabled: true
+  monitor_cameras: true
+  monitor_sync: false
+  poll_interval_ms: 100
+  camera_grace_ms: 1000
+  max_camera_staleness_ms: 500
+  severity: CRITICAL
+
+steps:
+  - at_ms: 0
+    cameras:
+      front:
+        state: ONLINE
+        last_frame_age_ms: 0
+
+  - at_ms: 1000
+    cameras:
+      front:
+        state: RECONNECTING
+        last_frame_age_ms: 1000
+
+  - at_ms: 2100
+    cameras:
+      front:
+        state: RECONNECTING
+        last_frame_age_ms: 2100
+
+  - at_ms: 3000
+    cameras:
+      front:
+        state: ONLINE
+        last_frame_age_ms: 0
+
+  - at_ms: 4000
+    cameras:
+      front:
+        state: RECONNECTING
+        last_frame_age_ms: 1000
+
+  - at_ms: 5100
+    cameras:
+      front:
+        state: RECONNECTING
+        last_frame_age_ms: 2100
+
+expect:
+  violation_types:
+    - SYSTEM_QUALITY
+    - SYSTEM_QUALITY
+  rule_ids:
+    - SYSTEM-QUALITY-CAMERA-FRONT
+    - SYSTEM-QUALITY-CAMERA-FRONT
+  final_session_passed: false
