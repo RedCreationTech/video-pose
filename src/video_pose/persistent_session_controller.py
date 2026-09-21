@@ -14,6 +14,11 @@ from .persistent_camera import PersistentCameraHub
 from .realtime_rules import RuleSessionUpdate
 from .runtime_config import LoadedAnalysisConfig
 from .runtime_fingerprint import build_runtime_fingerprint
+from .session_readiness import (
+    SessionNotReadyError,
+    SessionReadinessReport,
+    evaluate_session_readiness,
+)
 from .session_audit import SessionAuditMetadata, SessionAuditWriter
 from .session_controller import (
     ManagedSessionState,
@@ -87,6 +92,10 @@ class PersistentLiveSessionController:
         request: SessionStartRequest | None = None,
     ) -> ManagedSessionState:
         request = request or SessionStartRequest()
+        if self.config.config.readiness.enabled:
+            readiness = self.readiness()
+            if not readiness.ready:
+                raise SessionNotReadyError(readiness)
         with self._lock:
             if not self.hub.running:
                 raise RuntimeError("persistent camera hub is not running")
@@ -190,6 +199,14 @@ class PersistentLiveSessionController:
         return self._finish(
             session_id,
             status=ManagedSessionStatus.ABORTED,
+        )
+
+    def readiness(self) -> SessionReadinessReport:
+        return evaluate_session_readiness(
+            self.config,
+            hub=self.hub,
+            model_pool=self.model_pool,
+            repository=self.repository,
         )
 
     def current(self) -> ManagedSessionState | None:

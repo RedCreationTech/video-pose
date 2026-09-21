@@ -94,6 +94,29 @@ def effective_capture_timestamp_source(
     return CaptureTimestampSource.ARRIVAL
 
 
+class SessionReadinessRuntimeConfig(BaseModel):
+    enabled: bool = False
+    require_all_cameras_online: bool = True
+    allow_camera_degraded: bool = False
+    require_sync: bool = True
+    min_sync_emitted_total: int = Field(default=30, ge=0)
+    max_sync_miss_ratio: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+    )
+    max_sync_p99_skew_ms: float = Field(default=20.0, ge=0.0)
+    max_abs_sync_drift_ms_per_minute: float = Field(
+        default=2.0,
+        ge=0.0,
+    )
+    block_evidence_over_capacity: bool = True
+    block_evidence_errors: bool = True
+    require_persistence: bool = False
+    block_persistence_degraded: bool = False
+    require_runtime_assets: bool = True
+
+
 class EvidenceRuntimeConfig(BaseModel):
     enabled: bool = False
     root: str = "../output/evidence"
@@ -129,6 +152,9 @@ class OfflineAnalysisConfig(BaseModel):
     )
     evidence: EvidenceRuntimeConfig = Field(
         default_factory=EvidenceRuntimeConfig
+    )
+    readiness: SessionReadinessRuntimeConfig = Field(
+        default_factory=SessionReadinessRuntimeConfig
     )
     action_min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
 

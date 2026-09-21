@@ -45,3 +45,19 @@ evidence:
   cleanup_interval_s: 3600
 
 action_min_confidence: 0.75
+
+
+readiness:
+  enabled: true
+  require_all_cameras_online: true
+  allow_camera_degraded: false
+  require_sync: true
+  min_sync_emitted_total: 30
+  max_sync_miss_ratio: 0.20
+  max_sync_p99_skew_ms: 20
+  max_abs_sync_drift_ms_per_minute: 2.0
+  block_evidence_over_capacity: true
+  block_evidence_errors: true
+  require_persistence: true
+  block_persistence_degraded: true
+  require_runtime_assets: true

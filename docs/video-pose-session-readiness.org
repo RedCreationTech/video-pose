@@ -1,0 +1,61 @@
+#+TITLE: Video Pose Session Start Readiness Gate
+#+SUBTITLE: Camera, Sync, Evidence, Persistence and Asset Preconditions
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Problem
+
+A service process can be alive while a formal compliance Session should not start.
+
+Examples:
+
+- one camera is reconnecting.
+- all cameras are online but four-view sync P99 is too high.
+- sync warmup has not produced enough valid frame sets.
+- clock drift is excessive.
+- Evidence storage is over capacity.
+- Evidence worker has persistent errors.
+- PostgreSQL query store is degraded.
+- rules or calibration files are missing.
+
+* 2. Policy
+
+The generic project default is disabled for backward compatibility.
+
+The production Edge runtime template enables it.
+
+* 3. API
+
+#+BEGIN_SRC text
+GET /api/v1/sessions/readiness
+GET /health/ready
+POST /api/v1/sessions
+#+END_SRC
+
+When policy is enabled, =/health/ready= combines runtime health and Session readiness.
+
+A blocked Session start returns HTTP 503 with the complete readiness report.
+
+* 4. Checks
+
+Production template requires:
+
+- Persistent Camera Hub running.
+- Persistent Model Pool loaded.
+- all enabled cameras ONLINE.
+- sync warmup >= 30 emitted frame sets.
+- sync miss ratio <= 20%.
+- sync P99 skew <= 20 ms.
+- absolute clock drift <= 2 ms/min.
+- Evidence not over capacity.
+- Evidence worker errors = 0.
+- rules/manifest and configured calibration assets exist.
+- persistence configured and not DEGRADED.
+
+* 5. Why this is separate from process liveness
+
+=/health/live= still answers whether the API process is alive.
+
+=/health/ready= answers whether the node is ready to accept a formal work Session.
+
+This distinction allows orchestration and operators to see a healthy process that is temporarily not safe for production evaluation.

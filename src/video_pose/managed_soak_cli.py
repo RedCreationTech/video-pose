@@ -159,7 +159,12 @@ def _wait_for_ready(
 ) -> None:
     deadline = time.monotonic() + max(0.0, warmup_s)
     while time.monotonic() < deadline:
-        if controller.health_snapshot().ready:
+        readiness = controller.readiness()
+        if (
+            readiness.ready
+            if readiness.policy_enabled
+            else controller.health_snapshot().ready
+        ):
             return
         remaining = deadline - time.monotonic()
         time.sleep(min(1.0, max(0.0, remaining)))

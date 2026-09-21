@@ -14,6 +14,7 @@ from .auth import (
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
 from .session_controller import SessionStartRequest
+from .session_readiness import SessionNotReadyError
 from .violation_review import ViolationReviewRequest
 
 
@@ -199,6 +200,20 @@ def create_managed_live_app(
             },
         )
 
+    @app.get("/api/v1/sessions/readiness")
+    def session_readiness(
+        _principal: Any = Depends(require(Permission.RUNTIME_READ)),
+    ) -> Any:
+        method = getattr(controller, "readiness", None)
+        if not callable(method):
+            snapshot = controller.health_snapshot()
+            return {
+                "policy_enabled": False,
+                "ready": snapshot.ready,
+                "checks": [],
+            }
+        return method().model_dump(mode="json")
+
     @app.post("/api/v1/sessions")
     def start_session(
         request: SessionStartRequest,
@@ -206,6 +221,11 @@ def create_managed_live_app(
     ) -> Any:
         try:
             return controller.start(request).model_dump(mode="json")
+        except SessionNotReadyError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=exc.report.model_dump(mode="json"),
+            ) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -434,6 +454,26 @@ def _register_runtime_routes(
     @app.get("/health/ready")
     def health_ready() -> Any:
         snapshot = provider.health_snapshot()
+        readiness_method = getattr(provider, "readiness", None)
+        readiness = (
+            readiness_method()
+            if callable(readiness_method)
+            else None
+        )
+        if (
+            readiness is not None
+            and readiness.policy_enabled
+        ):
+            payload = {
+                "health": snapshot.model_dump(mode="json"),
+                "session_readiness": readiness.model_dump(
+                    mode="json"
+                ),
+            }
+            return JSONResponse(
+                payload,
+                status_code=200 if readiness.ready else 503,
+            )
         return JSONResponse(
             snapshot.model_dump(mode="json"),
             status_code=200 if snapshot.ready else 503,
