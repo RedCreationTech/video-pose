@@ -15,8 +15,8 @@ from .incomplete_recovery import IncompleteRecoveryRequest
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
 from .session_controller import SessionStartRequest
-from .telemetry import telemetry_span
 from .session_readiness import SessionNotReadyError
+from .telemetry import telemetry_span
 from .trace_context import (
     activate_trace_context,
     format_traceparent,
