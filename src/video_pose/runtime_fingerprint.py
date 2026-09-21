@@ -62,11 +62,13 @@ def build_runtime_fingerprint(
         timestamp_source=effective_capture_timestamp_source(
             cfg.live
         ).value,
-        sync_tolerance_ms=manifest.sync_tolerance_ms,
+        sync_tolerance_ms=float(
+            getattr(manifest, "sync_tolerance_ms", 0.0)
+        ),
         camera_clock_offsets_ms={
             camera.camera_id: camera.clock_offset_ms
-            for camera in manifest.cameras
-            if camera.enabled
+            for camera in getattr(manifest, "cameras", [])
+            if getattr(camera, "enabled", True)
         },
         config_sha256=sha256_file(config.path),
         manifest_sha256=_hash_config_path(
