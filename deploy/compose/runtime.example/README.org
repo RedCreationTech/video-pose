@@ -19,9 +19,24 @@ At minimum provide:
 - planar-calibration.yaml if enabled.
 - perspective calibration if triangulation is enabled.
 - RTMPose config when pose is enabled.
+- model-release.json for production model integrity.
 
 Model weight files should live under the host directory configured by =VIDEO_POSE_MODEL_DIR= and are mounted read-only at =/opt/video-pose/models=.
 
 For a CPU-only infrastructure smoke test, change detector/pose devices to CPU and disable Pose if the MMPose/MMCV stack is not installed.
 
 For production Pose, build a site-validated image containing a compatible PyTorch/CUDA/MMCV/MMPose combination. =video-pose-doctor= now checks =mmcv= whenever Pose is enabled.
+
+
+Generate the model release manifest only after the final model files are mounted at the same paths used by =runtime.yaml=.
+
+Example inside the final Edge image/container:
+
+#+BEGIN_SRC sh
+video-pose-model-release generate \
+  --config /etc/video-pose/runtime.yaml \
+  --release-id site-2026-09-21-r1 \
+  --output /etc/video-pose/model-release.json
+#+END_SRC
+
+The production manifest should be generated in a controlled release step and then mounted read-only. Do not auto-generate it on every service startup, otherwise a tampered model would simply be trusted as a new baseline.

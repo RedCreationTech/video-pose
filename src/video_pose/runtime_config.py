@@ -136,6 +136,12 @@ class SessionQualityRuntimeConfig(BaseModel):
     severity: Literal["MINOR", "MAJOR", "CRITICAL"] = "CRITICAL"
 
 
+class ModelReleaseRuntimeConfig(BaseModel):
+    enabled: bool = False
+    manifest: str | None = None
+    verify_on_doctor: bool = True
+
+
 class CalibrationHealthRuntimeConfig(BaseModel):
     enabled: bool = False
     calibration: str | None = None
@@ -216,6 +222,9 @@ class OfflineAnalysisConfig(BaseModel):
     )
     calibration_health: CalibrationHealthRuntimeConfig = Field(
         default_factory=CalibrationHealthRuntimeConfig
+    )
+    model_release: ModelReleaseRuntimeConfig = Field(
+        default_factory=ModelReleaseRuntimeConfig
     )
     session_quality: SessionQualityRuntimeConfig = Field(
         default_factory=SessionQualityRuntimeConfig

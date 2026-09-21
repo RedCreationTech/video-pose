@@ -359,6 +359,14 @@ def evaluate_session_readiness(
             ),
             required=cfg.triangulation.enabled,
         )
+        if cfg.model_release.enabled:
+            _asset_check(
+                config,
+                checks,
+                "asset:model-release-manifest",
+                cfg.model_release.manifest,
+                required=True,
+            )
         if cfg.calibration_health.enabled:
             _asset_check(
                 config,

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from .model_release import load_model_release_manifest
 from .runtime_config import (
     LoadedAnalysisConfig,
     effective_capture_timestamp_source,
@@ -27,6 +28,12 @@ class RuntimeFingerprint(BaseModel):
     perspective_calibration_sha256: str | None = None
     calibration_health_profile_sha256: str | None = None
     calibration_control_points_sha256: str | None = None
+    pose_config_sha256: str | None = None
+    model_release_id: str | None = None
+    model_release_manifest_sha256: str | None = None
+    model_artifact_sha256: dict[str, str] = Field(
+        default_factory=dict
+    )
 
 
 def sha256_file(path: str | Path) -> str | None:
@@ -65,6 +72,29 @@ def build_runtime_fingerprint(
         if cfg.calibration_health.enabled
         else None
     )
+    model_release_id = None
+    model_artifact_sha256: dict[str, str] = {}
+    model_release_manifest_sha256 = None
+    if (
+        cfg.model_release.enabled
+        and cfg.model_release.manifest is not None
+    ):
+        release_path = config.resolve(
+            cfg.model_release.manifest
+        )
+        model_release_manifest_sha256 = sha256_file(
+            release_path
+        )
+        if release_path.is_file():
+            release = load_model_release_manifest(
+                release_path
+            )
+            model_release_id = release.release_id
+            model_artifact_sha256 = {
+                artifact.name: artifact.sha256
+                for artifact in release.artifacts
+            }
+
     return RuntimeFingerprint(
         capture_backend=cfg.live.backend.value,
         timestamp_source=effective_capture_timestamp_source(
@@ -111,4 +141,17 @@ def build_runtime_fingerprint(
                 else None
             ),
         ),
+        pose_config_sha256=_hash_config_path(
+            config,
+            (
+                cfg.pose.config
+                if cfg.pose is not None and cfg.pose.enabled
+                else None
+            ),
+        ),
+        model_release_id=model_release_id,
+        model_release_manifest_sha256=(
+            model_release_manifest_sha256
+        ),
+        model_artifact_sha256=model_artifact_sha256,
     )

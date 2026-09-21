@@ -1,0 +1,99 @@
+#+TITLE: Video Pose Model Release Manifest
+#+SUBTITLE: Precomputed Model Artifact SHA-256 and Session Release Traceability
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Why
+
+Session startup should not hash multi-GB detector and pose weights.
+
+At the same time, a historical compliance result must identify the exact model binary used.
+
+Video Pose therefore separates:
+
+#+BEGIN_SRC text
+release-time model hashing
+        |
+        v
+model-release.json
+        |
+        +--> Doctor startup verification
+        |
+        +--> Session runtime fingerprint
+#+END_SRC
+
+* 2. Manifest
+
+Example:
+
+#+BEGIN_SRC json
+{
+  "schema_version": 1,
+  "release_id": "site-2026-09-21-r1",
+  "created_at": "...",
+  "artifacts": [
+    {
+      "name": "detector",
+      "role": "detector_weights",
+      "path": "/opt/video-pose/models/tools-best.pt",
+      "size_bytes": 123,
+      "sha256": "..."
+    }
+  ]
+}
+#+END_SRC
+
+Pose checkpoint is included when Pose is enabled.
+
+* 3. Generate
+
+Run only after final model files exist at the exact paths used by runtime configuration.
+
+#+BEGIN_SRC sh
+video-pose-model-release generate \
+  --config /etc/video-pose/runtime.yaml \
+  --release-id site-2026-09-21-r1 \
+  --output /etc/video-pose/model-release.json
+#+END_SRC
+
+The generated manifest becomes part of the release package and should be mounted read-only.
+
+* 4. Verify
+
+#+BEGIN_SRC sh
+video-pose-model-release verify \
+  --manifest /etc/video-pose/model-release.json
+#+END_SRC
+
+Verification checks:
+
+- file exists.
+- size matches.
+- SHA-256 matches.
+
+Exit code 2 indicates failure.
+
+* 5. Doctor
+
+When =model_release.enabled=true=, Doctor verifies the manifest during Edge startup.
+
+A tampered or replaced model therefore blocks service readiness before a formal Session can start.
+
+* 6. Session Audit
+
+Session fingerprint records:
+
+- model_release_id.
+- model_release_manifest_sha256.
+- model_artifact_sha256 map.
+- pose_config_sha256.
+
+The large model files are not rehashed during Session start.
+
+* 7. Security property
+
+Do not auto-generate the release manifest on every service startup.
+
+If startup regenerated the expected hash from a tampered model, integrity verification would become meaningless.
+
+The trust boundary is the controlled release process that creates and approves the manifest.

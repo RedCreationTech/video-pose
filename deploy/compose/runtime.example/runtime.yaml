@@ -16,6 +16,11 @@ pose:
   checkpoint: /opt/video-pose/models/rtmpose-body.pth
   device: cuda:0
 
+model_release:
+  enabled: true
+  manifest: /etc/video-pose/model-release.json
+  verify_on_doctor: true
+
 identity:
   enabled: true
   distance_threshold: 120

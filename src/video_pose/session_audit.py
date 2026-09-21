@@ -42,6 +42,12 @@ class SessionAuditMetadata(BaseModel):
     perspective_calibration_sha256: str | None = None
     calibration_health_profile_sha256: str | None = None
     calibration_control_points_sha256: str | None = None
+    pose_config_sha256: str | None = None
+    model_release_id: str | None = None
+    model_release_manifest_sha256: str | None = None
+    model_artifact_sha256: dict[str, str] = Field(
+        default_factory=dict
+    )
 
 
 class SessionAuditWriter:

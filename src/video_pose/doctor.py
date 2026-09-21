@@ -14,6 +14,10 @@ from .camera_model import (
     validate_calibration_health,
 )
 from .gstreamer_capture import opencv_has_gstreamer
+from .model_release import (
+    load_model_release_manifest,
+    verify_model_release_manifest,
+)
 from .native_gstreamer_capture import inspect_native_gstreamer
 from .perspective import load_perspective_calibration
 from .runtime_config import (
@@ -237,6 +241,63 @@ def _calibration_health_check(
     )
 
 
+def _model_release_check(
+    config: LoadedAnalysisConfig,
+) -> DoctorCheck | None:
+    release = config.config.model_release
+    if not release.enabled:
+        return None
+    if release.manifest is None:
+        return DoctorCheck(
+            name="model-release",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail="model release manifest is not configured",
+        )
+
+    path = config.resolve(release.manifest)
+    try:
+        manifest = load_model_release_manifest(path)
+        verification = verify_model_release_manifest(manifest)
+    except Exception as exc:
+        return DoctorCheck(
+            name="model-release",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail=str(exc),
+        )
+
+    failures = [
+        item
+        for item in verification.artifacts
+        if not item.passed
+    ]
+    detail = (
+        f"release_id={manifest.release_id}, "
+        f"artifacts={len(manifest.artifacts)}"
+    )
+    if failures:
+        detail += "; " + "; ".join(
+            (
+                f"{item.name}:"
+                f"exists={item.exists}:"
+                f"size={item.size_matches}:"
+                f"sha256={item.sha256_matches}"
+            )
+            for item in failures
+        )
+    return DoctorCheck(
+        name="model-release",
+        status=(
+            CheckStatus.PASS
+            if verification.passed
+            else CheckStatus.FAIL
+        ),
+        required=True,
+        detail=detail,
+    )
+
+
 def build_doctor_report(
     config_path: str | Path,
     *,
@@ -343,6 +404,10 @@ def build_doctor_report(
     calibration_health = _calibration_health_check(loaded)
     if calibration_health is not None:
         checks.append(calibration_health)
+
+    model_release = _model_release_check(loaded)
+    if model_release is not None:
+        checks.append(model_release)
 
     if include_cuda:
         checks.append(_cuda_check(loaded))
