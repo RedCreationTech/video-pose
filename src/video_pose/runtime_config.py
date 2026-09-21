@@ -115,6 +115,13 @@ class SessionReadinessRuntimeConfig(BaseModel):
     require_persistence: bool = False
     block_persistence_degraded: bool = False
     require_runtime_assets: bool = True
+    require_storage_headroom: bool = True
+    min_storage_free_ratio: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=1.0,
+    )
+    min_storage_free_gb: float = Field(default=5.0, ge=0.0)
 
 
 class EvidenceRuntimeConfig(BaseModel):

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
 from .live_health import CameraState
 from .runtime_config import LoadedAnalysisConfig
+from .storage_health import sample_runtime_storage
 
 
 class SessionReadinessCheck(BaseModel):
@@ -93,6 +95,7 @@ def evaluate_session_readiness(
     hub: Any,
     model_pool: Any | None,
     repository: Any | None,
+    audit_root: str | Path | None = None,
 ) -> SessionReadinessReport:
     policy = config.config.readiness
     if not policy.enabled:
@@ -290,6 +293,39 @@ def evaluate_session_readiness(
             ),
             required=cfg.triangulation.enabled,
         )
+
+    if policy.require_storage_headroom and audit_root is not None:
+        storage = sample_runtime_storage(
+            config,
+            audit_root=audit_root,
+        )
+        if not storage:
+            _check(
+                checks,
+                "storage",
+                False,
+                "storage health is unavailable",
+            )
+        for volume in storage:
+            free_gb = volume.free_bytes / (1024**3)
+            _check(
+                checks,
+                f"storage:{volume.name}:free-ratio",
+                volume.free_ratio >= policy.min_storage_free_ratio,
+                (
+                    f"free_ratio={volume.free_ratio:.6f}, "
+                    f"min={policy.min_storage_free_ratio:.6f}"
+                ),
+            )
+            _check(
+                checks,
+                f"storage:{volume.name}:free-gb",
+                free_gb >= policy.min_storage_free_gb,
+                (
+                    f"free_gb={free_gb:.3f}, "
+                    f"min={policy.min_storage_free_gb:.3f}"
+                ),
+            )
 
     persistence_status, persistence_detail = _persistence_status(
         repository

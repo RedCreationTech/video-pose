@@ -1,0 +1,60 @@
+#+TITLE: Video Pose Storage Headroom Health
+#+SUBTITLE: Audit/Evidence Filesystem Metrics, Readiness and Soak Gates
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Why
+
+Evidence retention limits are application-level limits. They do not know whether other processes, logs or database files have already filled the host filesystem.
+
+Formal Session readiness therefore also checks real filesystem free space.
+
+* 2. Volumes
+
+Persistent managed runtime samples:
+
+- audit filesystem.
+- evidence filesystem when Evidence is enabled.
+
+If the configured directory does not exist yet, Video Pose walks up to the nearest existing parent and calls =shutil.disk_usage= there.
+
+* 3. Health
+
+Each logical volume exposes:
+
+- total_bytes.
+- used_bytes.
+- free_bytes.
+- free_ratio.
+- configured_path.
+- probe_path.
+
+Paths are visible only in authenticated runtime health JSON.
+
+* 4. Prometheus privacy
+
+Prometheus exports only the logical volume name:
+
+#+BEGIN_SRC text
+video_pose_storage_total_bytes{name="audit"}
+video_pose_storage_used_bytes{name="audit"}
+video_pose_storage_free_bytes{name="audit"}
+video_pose_storage_free_ratio{name="audit"}
+#+END_SRC
+
+Host paths are not exported as labels.
+
+* 5. Production Session gate
+
+Default production template requires both:
+
+#+BEGIN_SRC text
+free ratio >= 10%
+free space >= 5 GB
+#+END_SRC
+
+for every configured Audit/Evidence volume.
+
+* 6. 72h Soak
+
+Soak reports the minimum free ratio and minimum free bytes observed over the entire run. A transient low-water event therefore remains visible even if cleanup later frees space.

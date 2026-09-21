@@ -182,6 +182,33 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
             ]
         )
 
+    for storage in snapshot.storage:
+        labels = {"name": storage.name}
+        lines.extend(
+            [
+                _metric(
+                    "video_pose_storage_total_bytes",
+                    storage.total_bytes,
+                    labels,
+                ),
+                _metric(
+                    "video_pose_storage_used_bytes",
+                    storage.used_bytes,
+                    labels,
+                ),
+                _metric(
+                    "video_pose_storage_free_bytes",
+                    storage.free_bytes,
+                    labels,
+                ),
+                _metric(
+                    "video_pose_storage_free_ratio",
+                    storage.free_ratio,
+                    labels,
+                ),
+            ]
+        )
+
     runtime = snapshot.runtime
     lines.extend(
         [

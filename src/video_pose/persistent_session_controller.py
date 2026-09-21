@@ -30,6 +30,7 @@ from .session_runtime import (
     build_session_analysis_runtime,
 )
 from .session_store import SessionStore
+from .storage_health import sample_runtime_storage
 from .violation_review import ViolationReviewRequest
 
 
@@ -207,6 +208,7 @@ class PersistentLiveSessionController:
             hub=self.hub,
             model_pool=self.model_pool,
             repository=self.repository,
+            audit_root=self.audit.root,
         )
 
     def current(self) -> ManagedSessionState | None:
@@ -230,7 +232,15 @@ class PersistentLiveSessionController:
         )
 
     def health_snapshot(self):
-        return self.hub.health_snapshot()
+        snapshot = self.hub.health_snapshot()
+        return snapshot.model_copy(
+            update={
+                "storage": sample_runtime_storage(
+                    self.config,
+                    audit_root=self.audit.root,
+                )
+            }
+        )
 
     def camera_catalog(self) -> list[dict[str, Any]]:
         return self.hub.camera_catalog()

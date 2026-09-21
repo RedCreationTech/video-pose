@@ -61,3 +61,6 @@ readiness:
   require_persistence: true
   block_persistence_degraded: true
   require_runtime_assets: true
+  require_storage_headroom: true
+  min_storage_free_ratio: 0.10
+  min_storage_free_gb: 5

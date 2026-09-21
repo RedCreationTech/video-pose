@@ -83,11 +83,22 @@ class EvidenceHealthSnapshot(BaseModel):
     over_capacity: bool = False
 
 
+class StorageHealthSnapshot(BaseModel):
+    name: str
+    configured_path: str
+    probe_path: str
+    total_bytes: int
+    used_bytes: int
+    free_bytes: int
+    free_ratio: float
+
+
 class LiveHealthSnapshot(BaseModel):
     cameras: list[CameraHealthSnapshot] = Field(default_factory=list)
     runtime: RuntimeHealthSnapshot
     sync: SyncHealthSnapshot | None = None
     evidence: EvidenceHealthSnapshot | None = None
+    storage: list[StorageHealthSnapshot] = Field(default_factory=list)
     ready: bool
 
 

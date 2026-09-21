@@ -32,6 +32,12 @@ class SoakThresholds(BaseModel):
         default=2.0,
         ge=0.0,
     )
+    min_storage_free_ratio: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=1.0,
+    )
+    min_storage_free_gb: float = Field(default=5.0, ge=0.0)
 
 
 class SoakSample(BaseModel):
@@ -63,6 +69,8 @@ class SoakReport(BaseModel):
     sync_p99_skew_ms: float | None
     sync_emitted_total: int | None
     max_abs_sync_drift_ms_per_minute: float | None
+    min_storage_free_ratio: float | None
+    min_storage_free_bytes: int | None
     passed: bool
     failures: list[str]
 
@@ -171,6 +179,28 @@ class SoakMonitor:
             evidence.over_capacity if evidence is not None else None
         )
 
+        storage_values = [
+            volume
+            for sample in self.samples
+            for volume in sample.health.storage
+        ]
+        min_storage_ratio = (
+            min(
+                volume.free_ratio
+                for volume in storage_values
+            )
+            if storage_values
+            else None
+        )
+        min_storage_bytes = (
+            min(
+                volume.free_bytes
+                for volume in storage_values
+            )
+            if storage_values
+            else None
+        )
+
         failures: list[str] = []
         thresholds = self.thresholds
         if ready_ratio < thresholds.min_ready_ratio:
@@ -251,6 +281,23 @@ class SoakMonitor:
                     f"{thresholds.max_abs_sync_drift_ms_per_minute:.6f}"
                 )
 
+        if min_storage_ratio is not None:
+            if (
+                min_storage_ratio
+                < thresholds.min_storage_free_ratio
+            ):
+                failures.append(
+                    f"min_storage_free_ratio={min_storage_ratio:.6f} "
+                    f"< {thresholds.min_storage_free_ratio:.6f}"
+                )
+            assert min_storage_bytes is not None
+            min_free_gb = min_storage_bytes / (1024**3)
+            if min_free_gb < thresholds.min_storage_free_gb:
+                failures.append(
+                    f"min_storage_free_gb={min_free_gb:.3f} "
+                    f"< {thresholds.min_storage_free_gb:.3f}"
+                )
+
         if evidence is not None:
             if (
                 evidence.drop_ratio
@@ -299,6 +346,8 @@ class SoakMonitor:
             sync_p99_skew_ms=sync_p99_skew_ms,
             sync_emitted_total=sync_emitted_total,
             max_abs_sync_drift_ms_per_minute=max_abs_sync_drift,
+            min_storage_free_ratio=min_storage_ratio,
+            min_storage_free_bytes=min_storage_bytes,
             passed=not failures,
             failures=failures,
         )

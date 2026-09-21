@@ -84,6 +84,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=2.0,
     )
+    parser.add_argument(
+        "--min-storage-free-ratio",
+        type=float,
+        default=0.10,
+    )
+    parser.add_argument(
+        "--min-storage-free-gb",
+        type=float,
+        default=5.0,
+    )
 
     parser.add_argument(
         "--max-session-start-errors",
@@ -134,6 +144,8 @@ def _health_thresholds(args: argparse.Namespace) -> SoakThresholds:
         max_abs_sync_drift_ms_per_minute=(
             args.max_abs_sync_drift_ms_per_minute
         ),
+        min_storage_free_ratio=args.min_storage_free_ratio,
+        min_storage_free_gb=args.min_storage_free_gb,
     )
 
 
