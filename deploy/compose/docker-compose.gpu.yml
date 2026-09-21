@@ -1,0 +1,11 @@
+services:
+  edge:
+    build:
+      args:
+        BASE_IMAGE: ${VIDEO_POSE_GPU_BASE_IMAGE:?set a site-validated NVIDIA CUDA runtime image}
+        VIDEO_POSE_EXTRAS: ${VIDEO_POSE_GPU_EXTRAS:-api,db,video,yolo,gstreamer-native,mmpose}
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+      VIDEO_POSE_DOCTOR_SKIP_CUDA: "0"

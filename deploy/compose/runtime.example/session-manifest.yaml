@@ -1,0 +1,30 @@
+session_id: edge-runtime-template
+workstation_id: CHANGE_ME_WORKSTATION
+sync_tolerance_ms: 20
+
+# This runtime directory is intentionally gitignored.
+# Replace every URI with the site RTSP endpoint and credentials.
+cameras:
+  - camera_id: cam-front
+    position: FRONT
+    uri: rtsp://CHANGE_ME_FRONT
+    codec: h264
+    clock_offset_ms: 0
+
+  - camera_id: cam-rear
+    position: REAR
+    uri: rtsp://CHANGE_ME_REAR
+    codec: h264
+    clock_offset_ms: 0
+
+  - camera_id: cam-left
+    position: LEFT
+    uri: rtsp://CHANGE_ME_LEFT
+    codec: h264
+    clock_offset_ms: 0
+
+  - camera_id: cam-right
+    position: RIGHT
+    uri: rtsp://CHANGE_ME_RIGHT
+    codec: h264
+    clock_offset_ms: 0

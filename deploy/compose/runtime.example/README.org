@@ -1,0 +1,27 @@
+#+TITLE: Video Pose Site-local Runtime Directory
+
+This directory is a template only.
+
+Copy it to:
+
+#+BEGIN_SRC text
+deploy/compose/runtime/
+#+END_SRC
+
+The real =runtime/= directory is gitignored because the camera manifest can contain RTSP credentials.
+
+At minimum provide:
+
+- runtime.yaml.
+- session-manifest.yaml.
+- rules.yaml.
+- zones.yaml if enabled.
+- planar-calibration.yaml if enabled.
+- perspective calibration if triangulation is enabled.
+- RTMPose config when pose is enabled.
+
+Model weight files should live under the host directory configured by =VIDEO_POSE_MODEL_DIR= and are mounted read-only at =/opt/video-pose/models=.
+
+For a CPU-only infrastructure smoke test, change detector/pose devices to CPU and disable Pose if the MMPose/MMCV stack is not installed.
+
+For production Pose, build a site-validated image containing a compatible PyTorch/CUDA/MMCV/MMPose combination. =video-pose-doctor= now checks =mmcv= whenever Pose is enabled.

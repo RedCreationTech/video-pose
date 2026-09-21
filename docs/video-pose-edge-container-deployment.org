@@ -1,0 +1,117 @@
+#+TITLE: Video Pose Edge Container Deployment
+#+SUBTITLE: Immutable Edge Service, PostgreSQL, GStreamer and GPU Override
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Files
+
+#+BEGIN_SRC text
+deploy/edge/Dockerfile
+deploy/edge/entrypoint.sh
+deploy/compose/docker-compose.yml
+deploy/compose/docker-compose.gpu.yml
+deploy/compose/.env.example
+deploy/compose/runtime.example/
+#+END_SRC
+
+* 2. Startup gate
+
+The container entrypoint executes:
+
+#+BEGIN_SRC text
+PostgreSQL/Alembic migration with retry
+               |
+               v
+       video-pose-doctor
+               |
+               v
+       video-pose-serve
+#+END_SRC
+
+A missing model, MMPose/MMCV stack, CUDA runtime, GStreamer capability or calibration therefore fails startup before accepting a production Session.
+
+* 3. Secrets
+
+Real site runtime files are mounted from =deploy/compose/runtime/=, which is gitignored.
+
+Do not commit:
+
+- RTSP usernames/passwords.
+- API bearer tokens.
+- PostgreSQL passwords.
+- private model registry credentials.
+
+Only SHA-256 bearer token digests are passed to Video Pose.
+
+* 4. Filesystem
+
+The Edge container root filesystem is read-only.
+
+Writable locations are separate named volumes:
+
+- audit.
+- evidence.
+- cache.
+
+=/tmp= is a bounded tmpfs.
+
+Models and runtime configuration are mounted read-only.
+
+* 5. Network
+
+PostgreSQL is not published to the host.
+
+HTTP binds to =127.0.0.1= by default and should sit behind a site TLS reverse proxy.
+
+Set =VIDEO_POSE_BIND_IP= only when direct LAN exposure is explicitly required.
+
+* 6. GPU
+
+Base Compose is GPU-neutral.
+
+NVIDIA nodes add:
+
+#+BEGIN_SRC sh
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  up -d --build
+#+END_SRC
+
+The CUDA base image is site-selected rather than hardcoded. This is deliberate because PyTorch/CUDA/MMCV compatibility must be validated as one release unit.
+
+* 7. Pose stack
+
+The Python =mmpose= extra installs MMPose/MMEngine. Production images still need a compatible MMCV build for the selected Torch/CUDA stack.
+
+Doctor now requires:
+
+#+BEGIN_SRC text
+mmpose
+mmengine
+mmcv
+#+END_SRC
+
+when Pose is enabled.
+
+* 8. Health
+
+Docker healthcheck uses unauthenticated:
+
+#+BEGIN_SRC text
+GET /health/ready
+#+END_SRC
+
+Business APIs, metrics, evidence and realtime streams remain protected by configured RBAC.
+
+* 9. Production recommendation
+
+Before release:
+
+1. Build the exact site image.
+2. Run =video-pose-doctor=.
+3. Run Golden Replay.
+4. Run =video-pose-managed-soak= for 72 hours.
+5. Exercise camera disconnect/reconnect.
+6. Review at least one generated evidence package.
+7. Archive the image digest and Session runtime fingerprint.

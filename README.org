@@ -3,7 +3,7 @@
 
 * 当前版本
 
-Video Pose 0.10 已形成离线与实时双链路:
+Video Pose 0.30 已形成离线, 实时, 审计, 证据和生产运维闭环:
 
 #+BEGIN_SRC text
 4 x Camera / Video
@@ -32,7 +32,7 @@ HTTP + WebSocket + Prometheus
 安装:
 
 #+BEGIN_SRC sh
-pip install -e '.[api,video,yolo]'
+pip install -e '.[api,db,video,yolo,gstreamer-native]'
 #+END_SRC
 
 启动:
@@ -92,3 +92,49 @@ video-pose-calibration-health
 * 文档
 
 详细 C4, 现场 PoC, 实时服务与测试设计见 =docs/=.
+
+
+* Edge Docker Compose
+
+生产边缘模板位于:
+
+#+BEGIN_SRC text
+deploy/edge/Dockerfile
+deploy/edge/entrypoint.sh
+deploy/compose/docker-compose.yml
+deploy/compose/docker-compose.gpu.yml
+deploy/compose/.env.example
+#+END_SRC
+
+准备站点私有配置目录:
+
+#+BEGIN_SRC sh
+cp -R deploy/compose/runtime.example deploy/compose/runtime
+cp deploy/compose/.env.example deploy/compose/.env
+#+END_SRC
+
+修改 =deploy/compose/runtime/session-manifest.yaml= 中的 RTSP URI, 并配置真实规则, 标定和模型路径. =runtime/= 已加入 =.gitignore=, 不要把摄像头密码提交到 Git.
+
+启动基础模式:
+
+#+BEGIN_SRC sh
+cd deploy/compose
+docker compose up -d --build
+#+END_SRC
+
+NVIDIA GPU 节点:
+
+#+BEGIN_SRC sh
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  up -d --build
+#+END_SRC
+
+容器 entrypoint 默认执行:
+
+#+BEGIN_SRC text
+database migration
+ -> video-pose-doctor
+ -> video-pose-serve
+#+END_SRC

@@ -8,3 +8,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Site-local deployment configuration can contain RTSP credentials.
+/deploy/compose/runtime/

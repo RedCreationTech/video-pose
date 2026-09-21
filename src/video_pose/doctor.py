@@ -202,7 +202,9 @@ def build_doctor_report(
 
     required_modules = ["pydantic", "yaml", "cv2", "ultralytics"]
     if cfg.pose is not None and cfg.pose.enabled:
-        required_modules.extend(["mmpose", "mmengine"])
+        required_modules.extend(
+            ["mmpose", "mmengine", "mmcv"]
+        )
     for module in required_modules:
         exists = module_probe(module)
         checks.append(

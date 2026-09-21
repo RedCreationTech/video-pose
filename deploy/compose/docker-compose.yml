@@ -1,34 +1,93 @@
+name: video-pose-edge
+
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: video_pose
-      POSTGRES_USER: video_pose
-      POSTGRES_PASSWORD: video_pose_dev
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-video_pose}
+      POSTGRES_USER: ${POSTGRES_USER:-video_pose}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U video_pose"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-video_pose} -d ${POSTGRES_DB:-video_pose}",
+        ]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  edge:
+    build:
+      context: ../..
+      dockerfile: deploy/edge/Dockerfile
+      args:
+        BASE_IMAGE: ${VIDEO_POSE_BASE_IMAGE:-ubuntu:24.04}
+        VIDEO_POSE_EXTRAS: ${VIDEO_POSE_EXTRAS:-api,db,video,yolo,gstreamer-native}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      MINIO_ROOT_USER: video_pose
-      MINIO_ROOT_PASSWORD: video_pose_dev_only
+      VIDEO_POSE_CONFIG: /etc/video-pose/runtime.yaml
+      VIDEO_POSE_HOST: 0.0.0.0
+      VIDEO_POSE_PORT: "8080"
+      VIDEO_POSE_QUEUE_SIZE: ${VIDEO_POSE_QUEUE_SIZE:-2}
+      VIDEO_POSE_AUDIT_DIR: /var/lib/video-pose/audit
+      VIDEO_POSE_DATABASE_URL: ${VIDEO_POSE_DATABASE_URL:?set VIDEO_POSE_DATABASE_URL in .env}
+      VIDEO_POSE_DB_MIGRATE: ${VIDEO_POSE_DB_MIGRATE:-1}
+      VIDEO_POSE_DB_MIGRATION_RETRIES: ${VIDEO_POSE_DB_MIGRATION_RETRIES:-30}
+      VIDEO_POSE_RUN_DOCTOR: ${VIDEO_POSE_RUN_DOCTOR:-1}
+      VIDEO_POSE_DOCTOR_SKIP_CUDA: ${VIDEO_POSE_DOCTOR_SKIP_CUDA:-0}
+      VIDEO_POSE_AUTH_ENABLED: ${VIDEO_POSE_AUTH_ENABLED:-1}
+      VIDEO_POSE_AUTH_TOKENS_JSON: ${VIDEO_POSE_AUTH_TOKENS_JSON:?set VIDEO_POSE_AUTH_TOKENS_JSON in .env}
+      XDG_CACHE_HOME: /var/cache/video-pose
+      YOLO_CONFIG_DIR: /var/cache/video-pose/ultralytics
+    volumes:
+      - ${VIDEO_POSE_CONFIG_DIR:?set VIDEO_POSE_CONFIG_DIR in .env}:/etc/video-pose:ro
+      - ${VIDEO_POSE_MODEL_DIR:?set VIDEO_POSE_MODEL_DIR in .env}:/opt/video-pose/models:ro
+      - audit-data:/var/lib/video-pose/audit
+      - evidence-data:/var/lib/video-pose/evidence
+      - cache-data:/var/cache/video-pose
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${VIDEO_POSE_BIND_IP:-127.0.0.1}:${VIDEO_POSE_HTTP_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 60s
+    networks:
+      - backend
+
+volumes:
+  postgres-data:
+  audit-data:
+  evidence-data:
+  cache-data:
+
+networks:
+  backend:
+    driver: bridge
