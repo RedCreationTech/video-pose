@@ -48,6 +48,20 @@ INDEX_HTML = r"""<!doctype html>
       <article class="kpi"><span>同步 P99</span><strong id="syncKpi">-</strong><small id="syncDetail">无同步数据</small></article>
     </section>
 
+    <section class="panel alert-panel">
+      <div class="section-head">
+        <div>
+          <h2>现场告警</h2>
+          <p>START BLOCKER 显示当前开工阻塞项, QUALITY INCIDENT 显示运行中质量违规.</p>
+        </div>
+        <div class="button-row">
+          <span id="alertCount" class="badge neutral">0</span>
+          <button id="clearAlertsBtn" class="secondary">清除本地事件</button>
+        </div>
+      </div>
+      <div id="alertsList" class="alert-list empty-state">当前没有告警.</div>
+    </section>
+
     <section class="panel cameras-panel">
       <div class="section-head">
         <div>
@@ -189,6 +203,7 @@ input{color:var(--text);background:#0a121a;border:1px solid #31465b;border-radiu
 .primary{background:#087da4;border-color:#159dc8}.success{background:#18754a;border-color:#269761}.danger{background:#8f3038;border-color:#b3404a}.secondary{border-color:#3a4f65;background:#1a2735}
 .badge{display:inline-flex;align-items:center;min-height:25px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);font-size:11px;white-space:nowrap}.badge.good{color:#9af0bc;border-color:#307b52;background:#163925}.badge.bad{color:#ffb0b4;border-color:#89444c;background:#3d2025}.badge.warn{color:#ffd98d;border-color:#806532;background:#3b3018}.badge.neutral{color:#bac8d5;background:#18232f}
 .notice{margin-top:12px;padding:9px 11px;border-radius:6px;background:#142233}.notice.error{border-left:3px solid var(--red)}.hidden{display:none!important}
+.alert-panel{margin-bottom:12px}.alert-list{display:grid;gap:7px}.alert-row{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:start;padding:9px;border:1px solid #2b3d50;border-radius:7px;background:#0d161f}.alert-row.blocker{border-left:3px solid var(--amber)}.alert-row.incident{border-left:3px solid var(--red)}.alert-message{font-size:12px;font-weight:650}.alert-detail{color:var(--muted);font-size:11px;margin-top:2px;overflow-wrap:anywhere}.alert-time{font-size:10px;color:#6f8295;white-space:nowrap}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px}.kpi{background:#101a24;border:1px solid var(--line);border-radius:8px;padding:14px}.kpi span,.kpi small{display:block;color:var(--muted)}.kpi strong{display:block;font-size:26px;margin:4px 0}
 .camera-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:10px}.camera-card{border:1px solid var(--line);background:#0c151e;border-radius:8px;overflow:hidden}.camera-head{display:flex;justify-content:space-between;padding:10px}.camera-title{font-weight:700}.camera-meta{white-space:pre-line;color:var(--muted);font-size:11px;line-height:1.55;padding:0 10px 10px}.camera-image{width:100%;aspect-ratio:16/9;display:block;object-fit:cover;background:repeating-linear-gradient(135deg,#111c27,#111c27 10px,#14212d 10px,#14212d 20px)}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-box{background:#0b141d;border:1px solid #233649;border-radius:7px;padding:10px;color:#c6d2dd;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px}.check-list,.compact-list,.review-list{display:grid;gap:7px}.check-row,.compact-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;padding:8px;border:1px solid #24384b;border-radius:6px;background:#0d161f}.check-name{font-weight:650}.check-detail{color:var(--muted);font-size:11px;overflow-wrap:anywhere}.indicator{width:9px;height:9px;border-radius:50%;margin-top:4px;background:var(--muted)}.indicator.good{background:var(--green);box-shadow:0 0 8px rgba(71,212,135,.5)}.indicator.bad{background:var(--red);box-shadow:0 0 8px rgba(255,109,118,.45)}
@@ -197,7 +212,7 @@ input{color:var(--text);background:#0a121a;border:1px solid #31465b;border-radiu
 .operations-lower{margin-top:12px}.history-list{display:grid;gap:7px;max-height:360px;overflow:auto}.history-row{border:1px solid #26394c;border-radius:7px;background:#0d161f;padding:9px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.history-row button{padding:6px 9px}.history-title{font-size:12px;font-weight:700}.history-meta{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.evidence-panel{margin-top:12px}.evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:10px;margin-top:10px}.evidence-card{border:1px solid #26394c;border-radius:8px;background:#0d161f;padding:10px}.evidence-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}.evidence-timeline{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:10px 0}.evidence-timeline input[type="range"]{width:100%;accent-color:var(--cyan);padding:0;border:0;background:transparent}.timeline-edge,.timeline-time{font-size:10px;color:var(--muted);white-space:nowrap}.timeline-time{min-width:72px;text-align:right}.evidence-images{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.evidence-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:#111b26;border:1px solid #233649;border-radius:5px}.evidence-caption{font-size:10px;color:var(--muted);margin-top:3px}.danger-text{color:var(--red)}
 footer{max-width:1600px;margin:0 auto;padding:14px 22px 24px;display:flex;justify-content:space-between;color:#64788d;font-size:11px}
 @media(max-width:1050px){.camera-grid,.kpi-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
-@media(max-width:650px){.topbar{position:static;padding:14px;align-items:flex-start;gap:10px}.badges{flex-wrap:wrap;justify-content:flex-end}.layout{padding:10px}.camera-grid,.kpi-grid,.evidence-grid{grid-template-columns:1fr}.form-row{align-items:stretch;flex-direction:column}.split-list,.health-grid{grid-template-columns:1fr}.review-row,.history-row{grid-template-columns:1fr}}"""
+@media(max-width:650px){.topbar{position:static;padding:14px;align-items:flex-start;gap:10px}.badges{flex-wrap:wrap;justify-content:flex-end}.layout{padding:10px}.camera-grid,.kpi-grid,.evidence-grid{grid-template-columns:1fr}.form-row{align-items:stretch;flex-direction:column}.split-list,.health-grid{grid-template-columns:1fr}.review-row,.history-row,.alert-row{grid-template-columns:1fr}}"""
 
 APP_JS = r""""use strict";
 
@@ -214,6 +229,9 @@ var state = {
   socket: null,
   realtimeRetry: null,
   realtimeRefresh: null,
+  readinessFailures: [],
+  qualityIncidents: [],
+  qualityIncidentKeys: new Set(),
   timer: null,
   tick: 0
 };
@@ -361,6 +379,7 @@ async function startRealtime() {
       try {
         var envelope = JSON.parse(event.data);
         if (envelope.type === "runtime.update") {
+          captureRealtimeIncidents(envelope.payload || {});
           scheduleRealtimeRefresh();
         }
       } catch (_) {}
@@ -436,6 +455,10 @@ function renderReadiness(payload) {
   el("readyKpi").style.color = payload.ready ? "var(--green)" : "var(--red)";
   var failed = (payload.checks || []).filter(function (item) { return !item.passed; }).length;
   setText("readyDetail", String(failed) + " 项未通过");
+  state.readinessFailures = (payload.checks || []).filter(function (item) {
+    return !item.passed;
+  });
+  renderAlerts();
   var target = el("readinessList");
   clearNode(target);
   target.className = "check-list";
@@ -633,6 +656,88 @@ function renderReviews(reviews) {
     target.appendChild(row);
   });
 }
+function captureRealtimeIncidents(payload) {
+  (payload.rule_updates || []).forEach(function (update) {
+    (update.new_violations || []).forEach(function (violation) {
+      var severe = violation.type === "SYSTEM_QUALITY" ||
+        violation.severity === "CRITICAL" ||
+        violation.severity === "MAJOR";
+      if (!severe) return;
+      var key =
+        String(violation.rule_id || violation.type || "unknown") +
+        "|" + String(violation.event_id || "no-event");
+      if (state.qualityIncidentKeys.has(key)) return;
+      state.qualityIncidentKeys.add(key);
+      state.qualityIncidents.unshift({
+        key: key,
+        ruleId: violation.rule_id || violation.type || "QUALITY",
+        severity: violation.severity || "CRITICAL",
+        type: violation.type || "QUALITY",
+        eventId: violation.event_id || "-",
+        message: violation.message || "Runtime quality incident",
+        timestamp: new Date().toLocaleTimeString()
+      });
+      if (state.qualityIncidents.length > 100) {
+        var removed = state.qualityIncidents.pop();
+        if (removed) state.qualityIncidentKeys.delete(removed.key);
+      }
+    });
+  });
+  renderAlerts();
+}
+function renderAlerts() {
+  var target = el("alertsList");
+  clearNode(target);
+  var blockers = state.readinessFailures || [];
+  var incidents = state.qualityIncidents || [];
+  setText("alertCount", blockers.length + incidents.length);
+
+  blockers.forEach(function (check) {
+    var row = makeNode("div", "alert-row blocker");
+    row.appendChild(makeBadge("START BLOCKER", "warn"));
+    var body = makeNode("div");
+    body.appendChild(makeNode("div", "alert-message", check.name));
+    body.appendChild(makeNode("div", "alert-detail", check.detail || ""));
+    row.appendChild(body);
+    row.appendChild(makeNode("span", "alert-time", "CURRENT"));
+    target.appendChild(row);
+  });
+
+  incidents.forEach(function (incident) {
+    var row = makeNode("div", "alert-row incident");
+    row.appendChild(makeBadge(
+      "QUALITY INCIDENT",
+      incident.severity === "CRITICAL" ? "bad" : "warn"
+    ));
+    var body = makeNode("div");
+    body.appendChild(makeNode(
+      "div",
+      "alert-message",
+      incident.ruleId + " · " + incident.severity
+    ));
+    body.appendChild(makeNode(
+      "div",
+      "alert-detail",
+      incident.message + " · Event " + incident.eventId
+    ));
+    row.appendChild(body);
+    row.appendChild(makeNode("span", "alert-time", incident.timestamp));
+    target.appendChild(row);
+  });
+
+  if (!blockers.length && !incidents.length) {
+    target.className = "alert-list empty-state";
+    target.textContent = "当前没有告警.";
+  } else {
+    target.className = "alert-list";
+  }
+}
+function clearLocalAlerts() {
+  state.qualityIncidents = [];
+  state.qualityIncidentKeys.clear();
+  renderAlerts();
+}
+
 function renderHistory(sessions) {
   var target = el("historyList");
   clearNode(target);
@@ -1038,6 +1143,7 @@ window.addEventListener("DOMContentLoaded", function () {
   el("abortBtn").addEventListener("click", function () { finishSession("abort"); });
   el("refreshSnapshotsBtn").addEventListener("click", refreshSnapshots);
   el("reconcileBtn").addEventListener("click", reconcile);
+  el("clearAlertsBtn").addEventListener("click", clearLocalAlerts);
   el("reloadEvidenceBtn").addEventListener("click", function () {
     if (state.selectedSessionId) {
       loadSessionEvidence(state.selectedSessionId);

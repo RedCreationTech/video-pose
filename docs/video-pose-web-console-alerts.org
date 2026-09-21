@@ -1,0 +1,78 @@
+#+TITLE: Video Pose Edge Console Alert View
+#+SUBTITLE: Separate Session Start Blockers from In-session Quality Incidents
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+A workstation can be unhealthy before a Session starts or become unhealthy during a Session.
+
+Those are different operational states and should not be represented by one generic red light.
+
+Console 0.55 introduces two alert categories.
+
+* 2. START BLOCKER
+
+START BLOCKER is derived from the current Session Readiness report.
+
+Examples:
+
+- camera offline.
+- model warmup failed.
+- sync P99 too high.
+- calibration health failed.
+- Audit not writable.
+- PostgreSQL unavailable.
+- reconciliation DIRTY.
+- disk headroom insufficient.
+
+These alerts represent current state.
+
+When the underlying Readiness check recovers, the blocker disappears.
+
+* 3. QUALITY INCIDENT
+
+QUALITY INCIDENT is captured from realtime =new_violations= when:
+
+- type is =SYSTEM_QUALITY=.
+- or severity is MAJOR/CRITICAL.
+
+These are event history for the current browser page.
+
+Examples:
+
+- camera outage during operation.
+- sync stall.
+- processing errors.
+- Evidence pressure.
+- Audit write failure.
+
+The events remain visible even after the system recovers.
+
+* 4. Deduplication
+
+Realtime incidents use:
+
+#+BEGIN_SRC text
+rule_id + event_id
+#+END_SRC
+
+as a local stable key.
+
+Repeated WebSocket delivery does not create duplicate alert rows.
+
+The Console retains at most the latest 100 local incidents.
+
+* 5. Clear Behavior
+
+=清除本地事件= clears only the page-local incident list.
+
+It does not:
+
+- delete Audit records.
+- delete SQL violations.
+- change Session result.
+- dismiss human review.
+- clear current START BLOCKER conditions.
+
+The backend remains the source of truth.
