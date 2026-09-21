@@ -47,6 +47,7 @@ from .trace_context import (
     current_trace_id,
     new_trace_context,
 )
+from .video_manifest import load_manifest
 from .violation_review import ViolationReviewRequest
 
 LOGGER = logging.getLogger("video_pose.session")
@@ -98,9 +99,14 @@ class PersistentLiveSessionController:
         self.processing_queue_size = processing_queue_size
         self.runtime_factory = runtime_factory
         self.repository = repository
+        identity_manifest = getattr(hub, "manifest", None)
+        if identity_manifest is None:
+            identity_manifest = load_manifest(
+                config.resolve(config.config.manifest)
+            )
         self.release_identity = build_runtime_release_identity(
             config,
-            hub.manifest,
+            identity_manifest,
         )
         self._lock = threading.RLock()
         self._runtime: SessionAnalysisRuntime | None = None
