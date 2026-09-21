@@ -1,0 +1,89 @@
+#+TITLE: Video Pose Incomplete Session Crash Recovery
+#+SUBTITLE: Controlled ABORTED Finalization for Unclean Edge Termination
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Problem
+
+If the Edge process or host dies during a formal Session, immutable Audit contains:
+
+- metadata.json.
+- updates.jsonl.
+- reviews.jsonl.
+
+but no =final.json=.
+
+Such a Session must never be silently treated as completed or deleted.
+
+* 2. Recovery semantics
+
+Controlled recovery creates:
+
+#+BEGIN_SRC text
+recovery.json
+final.json status=ABORTED
+#+END_SRC
+
+The final result:
+
+- preserves the latest known Step states from updates.
+- preserves already emitted Violations.
+- appends CRITICAL =SYSTEM-QUALITY-RECOVERY=.
+- sets score = 0.
+- sets passed = false.
+
+This communicates "the operation result is not trustworthy because the Session terminated uncleanly".
+
+* 3. Recovery record
+
+=recovery.json= stores:
+
+- recovered_at.
+- recovered_by.
+- reason.
+- update_count.
+- last_timestamp_ms.
+- recovery violation.
+
+The original update log is never rewritten.
+
+* 4. APIs
+
+List incomplete:
+
+#+BEGIN_SRC text
+GET /api/v1/runtime/persistence/incomplete-sessions
+#+END_SRC
+
+Controlled recovery:
+
+#+BEGIN_SRC text
+POST /api/v1/runtime/persistence/incomplete-sessions/{session_id}/recover
+#+END_SRC
+
+Body:
+
+#+BEGIN_SRC json
+{"reason":"edge host lost power"}
+#+END_SRC
+
+Recovery requires =persistence:repair=.
+
+* 5. CLI
+
+#+BEGIN_SRC sh
+video-pose-recover-incomplete \
+  --audit-dir /var/lib/video-pose/audit \
+  --session-id <id> \
+  --reason "edge host lost power" \
+  --recovered-by engineer-1 \
+  --database-url postgresql+psycopg://...
+#+END_SRC
+
+Without =--session-id=, all incomplete Audit Sessions are recovered. Use that only during a controlled maintenance window.
+
+* 6. Reconciliation
+
+After recovery, normal Audit-to-SQL reconciliation rebuilds the Session as ABORTED and restores the CRITICAL recovery violation.
+
+Production readiness can then return reconciliation from DIRTY to READY.

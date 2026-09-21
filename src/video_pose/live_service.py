@@ -11,6 +11,7 @@ from .auth import (
     AuthorizationError,
     Permission,
 )
+from .incomplete_recovery import IncompleteRecoveryRequest
 from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
 from .session_controller import SessionStartRequest
@@ -287,6 +288,51 @@ def create_managed_live_app(
         try:
             return method()
         except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/api/v1/runtime/persistence/incomplete-sessions")
+    def incomplete_persistence_sessions(
+        _principal: Any = Depends(require(Permission.PERSISTENCE_READ)),
+    ) -> Any:
+        method = getattr(
+            controller,
+            "list_incomplete_persistence_sessions",
+            None,
+        )
+        if not callable(method):
+            return []
+        return method()
+
+    @app.post(
+        "/api/v1/runtime/persistence/incomplete-sessions/"
+        "{session_id}/recover"
+    )
+    def recover_incomplete_persistence_session(
+        session_id: str,
+        request: IncompleteRecoveryRequest,
+        principal: Any = Depends(
+            require(Permission.PERSISTENCE_REPAIR)
+        ),
+    ) -> Any:
+        method = getattr(
+            controller,
+            "recover_incomplete_persistence_session",
+            None,
+        )
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="incomplete session recovery is unavailable",
+            )
+        try:
+            return method(
+                session_id,
+                request,
+                recovered_by=principal.subject,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/v1/sessions/{session_id}/evidence")

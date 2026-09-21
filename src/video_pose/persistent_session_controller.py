@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import Severity, Violation
+from .incomplete_recovery import (
+    IncompleteRecoveryRequest,
+    list_incomplete_audit_sessions,
+    recover_incomplete_audit_session,
+)
 from .live_payload import live_update_payload
 from .live_runtime import LiveAnalysisUpdate
 from .model_pool import PersistentModelPool
@@ -283,6 +288,48 @@ class PersistentLiveSessionController:
             camera_id,
             quality=quality,
         )
+
+    def list_incomplete_persistence_sessions(
+        self,
+    ) -> list[dict[str, Any]]:
+        return [
+            item.model_dump(mode="json")
+            for item in list_incomplete_audit_sessions(
+                self.audit.root
+            )
+        ]
+
+    def recover_incomplete_persistence_session(
+        self,
+        session_id: str,
+        request: IncompleteRecoveryRequest,
+        *,
+        recovered_by: str,
+    ) -> dict[str, Any]:
+        current = self.current()
+        if (
+            current is not None
+            and current.status == ManagedSessionStatus.RUNNING
+            and current.session_id == session_id
+        ):
+            raise RuntimeError(
+                "cannot recover the active running session"
+            )
+        recovery = recover_incomplete_audit_session(
+            self.audit.root / session_id,
+            request,
+            recovered_by=recovered_by,
+        )
+        reconciliation = None
+        if self.repository is not None:
+            method = getattr(self.repository, "reconcile", None)
+            if callable(method):
+                report = method(str(self.audit.root))
+                reconciliation = report.model_dump(mode="json")
+        return {
+            "recovery": recovery.model_dump(mode="json"),
+            "reconciliation": reconciliation,
+        }
 
     def reconcile_persistence(self) -> dict[str, Any]:
         if self.repository is None:
