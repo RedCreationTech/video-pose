@@ -1,0 +1,81 @@
+#+TITLE: Video Pose W3C Trace Context
+#+SUBTITLE: HTTP, Session and Background Worker Correlation without Mandatory OTel SDK
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+Video Pose already has Metrics and structured event logs.
+
+Trace Context adds one stable correlation chain across:
+
+#+BEGIN_SRC text
+HTTP request
+  -> Session start
+  -> inference worker
+  -> quality worker
+  -> Rule decision
+  -> Audit/SQL
+  -> WebSocket update
+#+END_SRC
+
+* 2. Standard
+
+The implementation uses W3C =traceparent=:
+
+#+BEGIN_SRC text
+00-<32 hex trace id>-<16 hex span id>-<flags>
+#+END_SRC
+
+Invalid and all-zero IDs are ignored and replaced with a new trace.
+
+* 3. HTTP
+
+For every request:
+
+1. parse incoming =traceparent= when valid.
+2. preserve upstream trace_id.
+3. generate a new local span_id.
+4. set contextvars for the request.
+5. return a new =traceparent= response header.
+6. return =X-Request-ID= equal to trace_id.
+
+* 4. WebSocket
+
+The initial WebSocket handshake also accepts =traceparent=.
+
+The connection task activates a local child span.
+
+* 5. Session trace
+
+When a formal Session starts, the active trace_id becomes the Session trace_id.
+
+If Session start is not triggered from an HTTP trace, Video Pose generates a new trace_id.
+
+The Session trace_id is stored in:
+
+- ManagedSessionState.
+- immutable metadata.json.
+- realtime payloads.
+- Session structured logs.
+
+* 6. Worker threads
+
+Python ContextVar values do not automatically become a permanent Session identity across independent background workers.
+
+Therefore Controller activates a new child span for each Session update while explicitly reusing the Session trace_id.
+
+This gives:
+
+#+BEGIN_SRC text
+same trace_id
+different span_id per update
+#+END_SRC
+
+* 7. OpenTelemetry compatibility
+
+No OpenTelemetry SDK is mandatory at the Edge.
+
+The IDs and propagation format are already W3C compatible.
+
+A later OTel SDK/exporter can attach spans to the same trace context without changing API contracts or Audit metadata.

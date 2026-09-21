@@ -41,6 +41,11 @@ from .session_runtime import (
 from .session_store import SessionStore
 from .storage_health import sample_runtime_storage
 from .structured_log import log_event
+from .trace_context import (
+    activate_trace_context,
+    current_trace_id,
+    new_trace_context,
+)
 from .violation_review import ViolationReviewRequest
 
 LOGGER = logging.getLogger("video_pose.session")
@@ -158,6 +163,10 @@ class PersistentLiveSessionController:
                 raise RuntimeError("a live session is already running")
 
             session_id = request.session_id or str(uuid.uuid4())
+            session_trace_id = (
+                current_trace_id()
+                or new_trace_context().trace_id
+            )
             runtime_kwargs: dict[str, Any] = {
                 "hub": self.hub,
                 "processing_queue_size": self.processing_queue_size,
@@ -178,6 +187,7 @@ class PersistentLiveSessionController:
             started_at = _utc_now()
             state = ManagedSessionState(
                 session_id=session_id,
+                trace_id=session_trace_id,
                 operator_id=request.operator_id,
                 operation=rule_set.operation,
                 workstation_id=self.hub.manifest.workstation_id,
@@ -190,6 +200,7 @@ class PersistentLiveSessionController:
             )
             metadata = SessionAuditMetadata(
                 session_id=session_id,
+                trace_id=session_trace_id,
                 operator_id=request.operator_id,
                 operation=rule_set.operation,
                 workstation_id=self.hub.manifest.workstation_id,
@@ -250,6 +261,7 @@ class PersistentLiveSessionController:
                 LOGGER,
                 "session_started",
                 session_id=session_id,
+                trace_id=session_trace_id,
                 workstation_id=state.workstation_id,
                 operation=state.operation,
                 rule_set_version=rule_set.version,
@@ -603,7 +615,15 @@ class PersistentLiveSessionController:
         if state is None:
             return
 
+        if state.trace_id is not None:
+            activate_trace_context(
+                new_trace_context(
+                    trace_id=state.trace_id
+                )
+            )
         payload = live_update_payload(update)
+        if state.trace_id is not None:
+            payload["session_trace_id"] = state.trace_id
         if isinstance(update, SessionQualityUpdate):
             for violation in update.rule_update.new_violations:
                 log_event(
@@ -611,6 +631,7 @@ class PersistentLiveSessionController:
                     "session_quality_violation",
                     level=logging.ERROR,
                     session_id=state.session_id,
+                    trace_id=state.trace_id,
                     rule_id=violation.rule_id,
                     event_id=violation.event_id,
                     violation_type=violation.type,
@@ -818,6 +839,7 @@ class PersistentLiveSessionController:
                 LOGGER,
                 "session_finished",
                 session_id=session_id,
+                trace_id=self._state.trace_id,
                 status=status.value,
                 passed=final.result.passed,
                 score=final.result.score,

@@ -37,6 +37,7 @@ class SessionStartRequest(BaseModel):
 
 class ManagedSessionState(BaseModel):
     session_id: str
+    trace_id: str | None = None
     operator_id: str | None = None
     operation: str
     workstation_id: str

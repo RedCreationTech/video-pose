@@ -107,3 +107,39 @@ The production Compose template defaults to JSON business logs.
 Docker/container runtime can forward stdout to Loki, Elasticsearch, OpenSearch or another site logging platform.
 
 No external logging SDK is required for the Edge runtime.
+
+
+* 7. W3C Trace Context
+
+Video Pose accepts and returns standard =traceparent=.
+
+HTTP:
+
+#+BEGIN_SRC text
+incoming traceparent
+      |
+new local span_id
+      |
+FastAPI request
+      |
+response traceparent + X-Request-ID
+#+END_SRC
+
+If no valid upstream trace exists, Video Pose creates a new 128-bit trace_id.
+
+* 8. Session trace
+
+Formal Session start captures the current trace_id.
+
+The trace_id is stored in:
+
+- ManagedSessionState.
+- metadata.json.
+- realtime update payloads as session_trace_id.
+- structured Session/quality logs.
+
+Background Session worker and quality-monitor threads create new span_id values while keeping the same Session trace_id.
+
+This provides cross-thread correlation without requiring the OpenTelemetry SDK at the Edge.
+
+A future OTel exporter can reuse the same W3C IDs.

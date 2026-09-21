@@ -16,6 +16,13 @@ from .live_broker import LiveEventBroker
 from .live_metrics import render_prometheus
 from .session_controller import SessionStartRequest
 from .session_readiness import SessionNotReadyError
+from .trace_context import (
+    activate_trace_context,
+    format_traceparent,
+    new_trace_context,
+    parse_traceparent,
+    use_trace_context,
+)
 from .violation_review import ViolationReviewRequest
 
 
@@ -63,6 +70,7 @@ def create_live_app(
     app.state.runtime = runtime
     app.state.broker = event_broker
     app.state.auth = auth_manager
+    _install_trace_middleware(app)
 
     _register_runtime_routes(
         app,
@@ -134,6 +142,7 @@ def create_managed_live_app(
     app.state.controller = controller
     app.state.broker = event_broker
     app.state.auth = auth_manager
+    _install_trace_middleware(app)
 
     require = _build_http_require(
         auth_manager,
@@ -456,6 +465,22 @@ def create_managed_live_app(
     return app
 
 
+def _install_trace_middleware(app: Any) -> None:
+    @app.middleware("http")
+    async def trace_http(request: Any, call_next: Any) -> Any:
+        parent = parse_traceparent(
+            request.headers.get("traceparent")
+        )
+        context = new_trace_context(parent)
+        with use_trace_context(context):
+            response = await call_next(request)
+        response.headers["traceparent"] = format_traceparent(
+            context
+        )
+        response.headers["X-Request-ID"] = context.trace_id
+        return response
+
+
 def _build_http_require(
     auth: AuthManager,
     Depends: Any,
@@ -570,6 +595,11 @@ def _register_runtime_routes(
         )
 
     async def realtime(websocket: Any) -> None:
+        parent = parse_traceparent(
+            websocket.headers.get("traceparent")
+        )
+        context = new_trace_context(parent)
+        activate_trace_context(context)
         try:
             authorization = websocket.headers.get("authorization")
             token = websocket.query_params.get("access_token")

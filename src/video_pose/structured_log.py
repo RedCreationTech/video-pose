@@ -7,6 +7,8 @@ import sys
 from datetime import UTC, datetime
 from typing import Any, TextIO
 
+from .trace_context import current_trace_fields
+
 _SENSITIVE_FRAGMENTS = (
     "authorization",
     "cookie",
@@ -167,11 +169,15 @@ def log_event(
     level: int = logging.INFO,
     **fields: Any,
 ) -> None:
+    correlated = {
+        **current_trace_fields(),
+        **fields,
+    }
     logger.log(
         level,
         event,
         extra={
             "event_name": event,
-            "event_fields": sanitized_fields(fields),
+            "event_fields": sanitized_fields(correlated),
         },
     )

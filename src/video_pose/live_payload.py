@@ -4,6 +4,7 @@ from typing import Any
 
 from .live_runtime import LiveAnalysisUpdate
 from .session_quality import SessionQualityUpdate
+from .trace_context import current_trace_fields
 
 
 def _rule_update_payload(rule_update: Any) -> dict[str, Any]:
@@ -26,6 +27,7 @@ def live_update_payload(
 ) -> dict[str, Any]:
     if isinstance(update, SessionQualityUpdate):
         return {
+            **current_trace_fields(),
             "timestamp_ms": update.timestamp_ms,
             "actions": [],
             "rule_updates": [
@@ -35,6 +37,7 @@ def live_update_payload(
         }
 
     return {
+        **current_trace_fields(),
         "timestamp_ms": update.trace.frame_set.reference_timestamp_ms,
         "actions": [
             action.model_dump(mode="json", by_alias=True)

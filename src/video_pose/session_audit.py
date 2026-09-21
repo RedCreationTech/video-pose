@@ -17,6 +17,7 @@ def _utc_now() -> str:
 
 class SessionAuditMetadata(BaseModel):
     session_id: str
+    trace_id: str | None = None
     operator_id: str | None = None
     operation: str
     workstation_id: str
