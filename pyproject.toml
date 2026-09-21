@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "video-pose"
-version = "0.48.0"
+version = "0.49.0"
 description = "Multi-view action compliance detection core for Video Pose"
 readme = {file = "README.org", content-type = "text/plain"}
 requires-python = ">=3.11"
@@ -71,6 +71,7 @@ video-pose-recover-incomplete = "video_pose.incomplete_recovery_cli:main"
 video-pose-auth-hash = "video_pose.auth_cli:main"
 video-pose-fault-evaluate = "video_pose.fault_cli:main"
 video-pose-model-release = "video_pose.model_release_cli:main"
+video-pose-release-check = "video_pose.release_acceptance_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/video_pose"]

@@ -753,3 +753,28 @@ CI 是最低回归门槛, 不包含 GPU/RTSP 真实硬件.
 - rollback plan verified.
 
 如果任何关键观测链失效却仍能得到 PASS, 直接判定 No-Go.
+
+
+* 32. Unified Release Acceptance Report
+
+Production candidates should produce one immutable release acceptance artifact:
+
+#+BEGIN_SRC sh
+video-pose-release-check \
+  --config <site-runtime.yaml> \
+  --golden-dataset <site-golden.yaml> \
+  --fault-dir fixtures/faults \
+  --soak-report output/managed-soak-72h.json \
+  --output output/release-acceptance.json
+#+END_SRC
+
+The report combines:
+
+- Release Identity.
+- Doctor.
+- Golden metrics.
+- Fault Matrix.
+- Managed Soak.
+- SHA-256 of all input evidence.
+
+A quick run can pass fast gates but cannot set =production_ready=true= without real long-running Soak evidence.

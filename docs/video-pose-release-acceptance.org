@@ -1,0 +1,113 @@
+#+TITLE: Video Pose Release Acceptance
+#+SUBTITLE: One Report for Doctor, Golden Replay, Fault Matrix and 72h Managed Soak
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Purpose
+
+Video Pose has multiple release gates.
+
+Running them separately is useful during development, but a production candidate needs one immutable acceptance report tied to one Release Identity.
+
+=video-pose-release-check= combines:
+
+- Runtime Release Identity.
+- Doctor.
+- Golden Replay metrics.
+- deterministic Fault Matrix.
+- an already completed Managed Soak report.
+- SHA-256 for every input evidence file.
+
+* 2. Two Outcomes
+
+The report intentionally has two booleans.
+
+#+BEGIN_SRC text
+quick_checks_passed
+production_ready
+#+END_SRC
+
+=quick_checks_passed= covers fast deterministic checks.
+
+=production_ready= additionally requires valid Managed Soak evidence.
+
+A quick run without Soak can never claim =production_ready=true=.
+
+* 3. Default Gates
+
+#+BEGIN_SRC text
+Action F1 >= 0.90
+Violation F1 >= 0.90
+Session PASS accuracy >= 0.95
+all Fault Scenarios match expectations
+Doctor PASS
+Managed Soak PASS
+Managed Soak duration >= 72 h
+Managed Soak completed Sessions >= 2
+#+END_SRC
+
+Project acceptance can tighten these thresholds.
+
+* 4. Full Production Check
+
+#+BEGIN_SRC sh
+video-pose-release-check \
+  --config deploy/compose/runtime/runtime.yaml \
+  --golden-dataset datasets/site-acceptance/manifest.yaml \
+  --fault-dir fixtures/faults \
+  --soak-report output/managed-soak-72h.json \
+  --output output/release-acceptance.json
+#+END_SRC
+
+Exit code 0 means =production_ready=true=.
+
+* 5. Quick Candidate Check
+
+#+BEGIN_SRC sh
+video-pose-release-check \
+  --config deploy/compose/runtime/runtime.yaml \
+  --golden-dataset datasets/site-acceptance/manifest.yaml \
+  --fault-dir fixtures/faults \
+  --quick \
+  --output output/release-quick.json
+#+END_SRC
+
+Exit code 0 means fast checks passed.
+
+The report still records:
+
+#+BEGIN_SRC text
+production_ready = false
+production_failures = ["managed_soak_report_missing"]
+#+END_SRC
+
+* 6. Artifact Integrity
+
+The acceptance report records path and SHA-256 for:
+
+- runtime config.
+- Golden dataset manifest.
+- every Fault Scenario YAML.
+- Managed Soak report.
+
+The report also embeds RuntimeReleaseIdentity, which already fingerprints rules, calibration, model release and deployment identity.
+
+* 7. Why Soak Is Imported
+
+A real 72-hour soak cannot be compressed into a synchronous release command.
+
+The acceptance command verifies the actual report produced by =video-pose-managed-soak=.
+
+It also validates the recorded duration, so a short smoke run cannot masquerade as the final long-running gate.
+
+* 8. Archival
+
+For every accepted deployment archive together:
+
+- release-acceptance.json.
+- model-release.json.
+- Managed Soak JSON.
+- Golden dataset version/checksum.
+- Edge image digest.
+
+This forms the minimum release evidence package for later incident review.
