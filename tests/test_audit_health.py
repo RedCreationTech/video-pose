@@ -12,7 +12,7 @@ def test_audit_writer_health_degrades_and_recovers(
     blocker.write_text("not a directory", encoding="utf-8")
     writer = SessionAuditWriter(blocker / "audit")
 
-    with pytest.raises(Exception):
+    with pytest.raises(OSError):
         writer.probe()
     degraded = writer.health()
     assert degraded.status == "DEGRADED"
