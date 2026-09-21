@@ -49,6 +49,21 @@ class RuntimeHealthSnapshot(BaseModel):
     max_gpu_reserved_mb: float = 0.0
 
 
+class SyncHealthSnapshot(BaseModel):
+    reference_frames_total: int = 0
+    emitted_total: int = 0
+    miss_total: int = 0
+    missing_buffer_total: int = 0
+    tolerance_miss_total: int = 0
+    stale_reference_total: int = 0
+    success_ratio: float = 0.0
+    last_skew_ms: float | None = None
+    max_skew_ms: float = 0.0
+    skew_p95_ms: float = 0.0
+    skew_p99_ms: float = 0.0
+    camera_offsets_ms: dict[str, float] = Field(default_factory=dict)
+
+
 class EvidenceHealthSnapshot(BaseModel):
     enabled: bool = True
     submitted_total: int = 0
@@ -68,6 +83,7 @@ class EvidenceHealthSnapshot(BaseModel):
 class LiveHealthSnapshot(BaseModel):
     cameras: list[CameraHealthSnapshot] = Field(default_factory=list)
     runtime: RuntimeHealthSnapshot
+    sync: SyncHealthSnapshot | None = None
     evidence: EvidenceHealthSnapshot | None = None
     ready: bool
 
@@ -82,6 +98,22 @@ class _CameraHealth:
     first_frame_monotonic_ms: float | None = None
     last_frame_monotonic_ms: float | None = None
     last_error: str | None = None
+
+
+@dataclass(slots=True)
+class _SyncHealth:
+    reference_frames_total: int = 0
+    emitted_total: int = 0
+    miss_total: int = 0
+    missing_buffer_total: int = 0
+    tolerance_miss_total: int = 0
+    stale_reference_total: int = 0
+    last_skew_ms: float | None = None
+    max_skew_ms: float = 0.0
+    skews_ms: deque[float] = field(
+        default_factory=lambda: deque(maxlen=4096)
+    )
+    camera_offsets_ms: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -119,6 +151,7 @@ class LiveHealthRegistry:
             for camera_id in camera_ids
         }
         self._runtime = _RuntimeHealth(queue_capacity=queue_capacity)
+        self._sync: _SyncHealth | None = None
 
     def camera_starting(self, camera_id: str) -> None:
         with self._lock:
@@ -157,6 +190,46 @@ class LiveHealthRegistry:
     def camera_stopped(self, camera_id: str) -> None:
         with self._lock:
             self._camera(camera_id).state = CameraState.STOPPED
+
+    def enable_sync(self) -> None:
+        with self._lock:
+            if self._sync is None:
+                self._sync = _SyncHealth()
+
+    def sync_reference_frame(self) -> None:
+        with self._lock:
+            if self._sync is None:
+                self._sync = _SyncHealth()
+            self._sync.reference_frames_total += 1
+
+    def sync_miss(self, reason: str) -> None:
+        with self._lock:
+            if self._sync is None:
+                self._sync = _SyncHealth()
+            sync = self._sync
+            sync.miss_total += 1
+            if reason == "missing_buffer":
+                sync.missing_buffer_total += 1
+            elif reason == "tolerance":
+                sync.tolerance_miss_total += 1
+            elif reason == "stale_reference":
+                sync.stale_reference_total += 1
+
+    def sync_emitted(
+        self,
+        *,
+        skew_ms: float,
+        camera_offsets_ms: dict[str, float],
+    ) -> None:
+        with self._lock:
+            if self._sync is None:
+                self._sync = _SyncHealth()
+            sync = self._sync
+            sync.emitted_total += 1
+            sync.last_skew_ms = skew_ms
+            sync.max_skew_ms = max(sync.max_skew_ms, skew_ms)
+            sync.skews_ms.append(skew_ms)
+            sync.camera_offsets_ms = dict(camera_offsets_ms)
 
     def frame_set_received(self) -> None:
         with self._lock:
@@ -205,6 +278,30 @@ class LiveHealthRegistry:
                 for camera_id, camera in sorted(self._cameras.items())
             ]
             latencies = sorted(self._runtime.latencies_ms)
+            sync = None
+            if self._sync is not None:
+                skews = sorted(self._sync.skews_ms)
+                attempts = self._sync.reference_frames_total
+                sync = SyncHealthSnapshot(
+                    reference_frames_total=attempts,
+                    emitted_total=self._sync.emitted_total,
+                    miss_total=self._sync.miss_total,
+                    missing_buffer_total=self._sync.missing_buffer_total,
+                    tolerance_miss_total=self._sync.tolerance_miss_total,
+                    stale_reference_total=self._sync.stale_reference_total,
+                    success_ratio=(
+                        self._sync.emitted_total / attempts
+                        if attempts
+                        else 0.0
+                    ),
+                    last_skew_ms=self._sync.last_skew_ms,
+                    max_skew_ms=self._sync.max_skew_ms,
+                    skew_p95_ms=self._percentile(skews, 0.95),
+                    skew_p99_ms=self._percentile(skews, 0.99),
+                    camera_offsets_ms=dict(
+                        self._sync.camera_offsets_ms
+                    ),
+                )
             runtime = RuntimeHealthSnapshot(
                 frame_sets_received_total=self._runtime.frame_sets_received_total,
                 frame_sets_processed_total=self._runtime.frame_sets_processed_total,
@@ -229,6 +326,7 @@ class LiveHealthRegistry:
         return LiveHealthSnapshot(
             cameras=cameras,
             runtime=runtime,
+            sync=sync,
             ready=ready,
         )
 

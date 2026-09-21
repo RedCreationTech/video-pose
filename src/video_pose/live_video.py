@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .frames import DecodedFrame
+from .live_health import LiveHealthRegistry
 from .video_manifest import CameraPosition, ReplayManifest
 from .video_replay import FrameRef, SynchronizedFrameSet
 
@@ -64,6 +65,7 @@ class LiveFrameSynchronizer:
         *,
         reference_position: CameraPosition = CameraPosition.FRONT,
         max_buffer_frames: int = 120,
+        health: LiveHealthRegistry | None = None,
     ) -> None:
         if max_buffer_frames < 1:
             raise ValueError("max_buffer_frames must be >= 1")
@@ -71,6 +73,9 @@ class LiveFrameSynchronizer:
         self.frame_store = frame_store
         self.reference_position = reference_position
         self.max_buffer_frames = max_buffer_frames
+        self.health = health
+        if self.health is not None:
+            self.health.enable_sync()
         self._camera_by_id = {
             camera.camera_id: camera
             for camera in manifest.cameras
@@ -136,7 +141,11 @@ class LiveFrameSynchronizer:
 
         if camera.position != self.reference_position:
             return None
+        if self.health is not None:
+            self.health.sync_reference_frame()
         if packet.normalized_timestamp_ms <= self._last_emitted_reference_ms:
+            if self.health is not None:
+                self.health.sync_miss("stale_reference")
             return None
 
         synchronized = self._match(packet)
@@ -155,9 +164,13 @@ class LiveFrameSynchronizer:
         for position in CameraPosition:
             camera = self._camera_by_position.get(position)
             if camera is None:
+                if self.health is not None:
+                    self.health.sync_miss("missing_buffer")
                 return None
             buffer = self._buffers[camera.camera_id]
             if not buffer:
+                if self.health is not None:
+                    self.health.sync_miss("missing_buffer")
                 return None
             packet = min(
                 buffer,
@@ -166,6 +179,8 @@ class LiveFrameSynchronizer:
                 ),
             )
             if abs(packet.normalized_timestamp_ms - target) > tolerance:
+                if self.health is not None:
+                    self.health.sync_miss("tolerance")
                 return None
             selected[position] = packet
 
@@ -173,6 +188,17 @@ class LiveFrameSynchronizer:
             packet.normalized_timestamp_ms
             for packet in selected.values()
         ]
+        skew_ms = max(values) - min(values)
+        if self.health is not None:
+            self.health.sync_emitted(
+                skew_ms=skew_ms,
+                camera_offsets_ms={
+                    packet.camera_id: (
+                        packet.normalized_timestamp_ms - target
+                    )
+                    for packet in selected.values()
+                },
+            )
         return SynchronizedFrameSet(
             reference_timestamp_ms=target,
             frames={
@@ -185,5 +211,5 @@ class LiveFrameSynchronizer:
                 )
                 for position, packet in selected.items()
             },
-            skew_ms=max(values) - min(values),
+            skew_ms=skew_ms,
         )

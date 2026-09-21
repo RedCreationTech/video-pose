@@ -173,7 +173,11 @@ def build_live_runtime(
         ],
         queue_capacity=processing_queue_size,
     )
-    synchronizer = LiveFrameSynchronizer(manifest, frame_store)
+    synchronizer = LiveFrameSynchronizer(
+        manifest,
+        frame_store,
+        health=health,
+    )
     pipeline = build_analysis_pipeline(
         config,
         session_id=effective_session_id,

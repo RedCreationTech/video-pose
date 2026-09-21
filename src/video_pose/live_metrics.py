@@ -56,6 +56,67 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
             ]
         )
 
+    sync = snapshot.sync
+    if sync is not None:
+        lines.extend(
+            [
+                _metric(
+                    "video_pose_sync_reference_frames_total",
+                    sync.reference_frames_total,
+                ),
+                _metric(
+                    "video_pose_sync_emitted_total",
+                    sync.emitted_total,
+                ),
+                _metric(
+                    "video_pose_sync_miss_total",
+                    sync.miss_total,
+                ),
+                _metric(
+                    "video_pose_sync_missing_buffer_total",
+                    sync.missing_buffer_total,
+                ),
+                _metric(
+                    "video_pose_sync_tolerance_miss_total",
+                    sync.tolerance_miss_total,
+                ),
+                _metric(
+                    "video_pose_sync_stale_reference_total",
+                    sync.stale_reference_total,
+                ),
+                _metric(
+                    "video_pose_sync_success_ratio",
+                    sync.success_ratio,
+                ),
+                _metric(
+                    "video_pose_sync_skew_ms",
+                    sync.last_skew_ms or 0.0,
+                ),
+                _metric(
+                    "video_pose_sync_skew_max_ms",
+                    sync.max_skew_ms,
+                ),
+                _metric(
+                    "video_pose_sync_skew_p95_ms",
+                    sync.skew_p95_ms,
+                ),
+                _metric(
+                    "video_pose_sync_skew_p99_ms",
+                    sync.skew_p99_ms,
+                ),
+            ]
+        )
+        for camera_id, offset_ms in sorted(
+            sync.camera_offsets_ms.items()
+        ):
+            lines.append(
+                _metric(
+                    "video_pose_sync_camera_offset_ms",
+                    offset_ms,
+                    {"camera": camera_id},
+                )
+            )
+
     evidence = snapshot.evidence
     if evidence is not None:
         lines.extend(

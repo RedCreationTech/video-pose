@@ -1,0 +1,60 @@
+#+TITLE: Video Pose Multi-camera Sync Health
+#+SUBTITLE: Reference Attempts, Sync Misses, Skew Percentiles and Soak Gates
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Why
+
+Four cameras can all remain ONLINE while their timelines drift.
+
+Therefore camera health alone is not enough. Live synchronizer now exposes a separate sync health section.
+
+* 2. Metrics
+
+Tracked on reference-camera attempts:
+
+- reference_frames_total.
+- emitted_total.
+- miss_total.
+- missing_buffer_total.
+- tolerance_miss_total.
+- stale_reference_total.
+- success_ratio.
+- last/max skew.
+- skew P95/P99.
+- current signed offset for every camera.
+
+* 3. Prometheus
+
+#+BEGIN_SRC text
+video_pose_sync_reference_frames_total
+video_pose_sync_emitted_total
+video_pose_sync_miss_total
+video_pose_sync_missing_buffer_total
+video_pose_sync_tolerance_miss_total
+video_pose_sync_stale_reference_total
+video_pose_sync_success_ratio
+video_pose_sync_skew_ms
+video_pose_sync_skew_max_ms
+video_pose_sync_skew_p95_ms
+video_pose_sync_skew_p99_ms
+video_pose_sync_camera_offset_ms{camera="..."}
+#+END_SRC
+
+* 4. Soak defaults
+
+When sync metrics are enabled:
+
+- miss ratio <= 10%.
+- P99 skew <= 20 ms.
+- emitted synchronized frame sets >= 1.
+
+Offline/manual health snapshots without sync enabled are not affected.
+
+* 5. Interpretation
+
+High missing_buffer_total often means one camera is late or reconnecting.
+
+High tolerance_miss_total with all cameras ONLINE usually means clock offset, transport jitter or decode buffering needs attention.
+
+High stale_reference_total means reference timestamps are not monotonic and should block production acceptance.

@@ -21,6 +21,13 @@ class SoakThresholds(BaseModel):
     )
     max_evidence_errors: int = Field(default=0, ge=0)
     fail_on_evidence_over_capacity: bool = True
+    max_sync_miss_ratio: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=1.0,
+    )
+    max_sync_p99_skew_ms: float = Field(default=20.0, ge=0.0)
+    min_sync_emitted_total: int = Field(default=1, ge=0)
 
 
 class SoakSample(BaseModel):
@@ -48,6 +55,9 @@ class SoakReport(BaseModel):
     evidence_drop_ratio: float | None
     evidence_errors_total: int | None
     evidence_over_capacity: bool | None
+    sync_miss_ratio: float | None
+    sync_p99_skew_ms: float | None
+    sync_emitted_total: int | None
     passed: bool
     failures: list[str]
 
@@ -125,6 +135,18 @@ class SoakMonitor:
             default=0.0,
         )
 
+        sync = latest.sync
+        sync_miss_ratio = None
+        sync_p99_skew_ms = None
+        sync_emitted_total = None
+        if sync is not None:
+            attempts = sync.reference_frames_total
+            sync_miss_ratio = (
+                sync.miss_total / attempts if attempts else 0.0
+            )
+            sync_p99_skew_ms = sync.skew_p99_ms
+            sync_emitted_total = sync.emitted_total
+
         evidence = latest.evidence
         evidence_drop_ratio = (
             evidence.drop_ratio if evidence is not None else None
@@ -182,6 +204,29 @@ class SoakMonitor:
                 f"rss_growth_mb={rss_growth:.3f} "
                 f"> {thresholds.max_rss_growth_mb:.3f}"
             )
+        if sync is not None:
+            if (
+                sync_miss_ratio is not None
+                and sync_miss_ratio > thresholds.max_sync_miss_ratio
+            ):
+                failures.append(
+                    f"sync_miss_ratio={sync_miss_ratio:.6f} "
+                    f"> {thresholds.max_sync_miss_ratio:.6f}"
+                )
+            if (
+                sync.skew_p99_ms
+                > thresholds.max_sync_p99_skew_ms
+            ):
+                failures.append(
+                    f"sync_p99_skew_ms={sync.skew_p99_ms:.3f} "
+                    f"> {thresholds.max_sync_p99_skew_ms:.3f}"
+                )
+            if sync.emitted_total < thresholds.min_sync_emitted_total:
+                failures.append(
+                    f"sync_emitted_total={sync.emitted_total} "
+                    f"< {thresholds.min_sync_emitted_total}"
+                )
+
         if evidence is not None:
             if (
                 evidence.drop_ratio
@@ -226,6 +271,9 @@ class SoakMonitor:
             evidence_drop_ratio=evidence_drop_ratio,
             evidence_errors_total=evidence_errors_total,
             evidence_over_capacity=evidence_over_capacity,
+            sync_miss_ratio=sync_miss_ratio,
+            sync_p99_skew_ms=sync_p99_skew_ms,
+            sync_emitted_total=sync_emitted_total,
             passed=not failures,
             failures=failures,
         )

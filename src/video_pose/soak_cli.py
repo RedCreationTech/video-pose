@@ -52,6 +52,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-evidence-over-capacity",
         action="store_true",
     )
+    parser.add_argument(
+        "--max-sync-miss-ratio",
+        type=float,
+        default=0.10,
+    )
+    parser.add_argument(
+        "--max-sync-p99-skew-ms",
+        type=float,
+        default=20.0,
+    )
+    parser.add_argument(
+        "--min-sync-emitted-total",
+        type=int,
+        default=1,
+    )
     return parser
 
 
@@ -71,6 +86,9 @@ def main() -> int:
         fail_on_evidence_over_capacity=(
             not args.allow_evidence_over_capacity
         ),
+        max_sync_miss_ratio=args.max_sync_miss_ratio,
+        max_sync_p99_skew_ms=args.max_sync_p99_skew_ms,
+        min_sync_emitted_total=args.min_sync_emitted_total,
     )
     monitor = SoakMonitor(thresholds)
     runtime = build_live_runtime(

@@ -287,6 +287,7 @@ def build_persistent_camera_hub(
     synchronizer = LiveFrameSynchronizer(
         manifest,
         frame_store,
+        health=health,
     )
     gateway = ThreadedLiveGateway(
         manifest,
