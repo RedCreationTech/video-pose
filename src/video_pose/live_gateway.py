@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -7,9 +8,12 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .live_health import LiveHealthRegistry
+from .structured_log import log_event
 from .live_video import LiveFrameSynchronizer
 from .video_manifest import ReplayManifest
 from .video_replay import SynchronizedFrameSet
+
+LOGGER = logging.getLogger("video_pose.camera")
 
 
 class LiveCameraReader(Protocol):
@@ -49,7 +53,9 @@ class OpenCVLiveCamera:
         capture = cv2.VideoCapture(self.uri)
         if not capture.isOpened():
             capture.release()
-            raise ValueError(f"cannot open live camera: {self.uri}")
+            raise ValueError(
+                f"cannot open live camera: {self.camera_id}"
+            )
         self._capture = capture
 
     def read(self) -> tuple[float, Any]:
@@ -111,6 +117,17 @@ class ThreadedLiveGateway:
         self._callback = callback
         self._stop.clear()
 
+        enabled_count = sum(
+            1
+            for camera in self.manifest.cameras
+            if camera.enabled
+        )
+        log_event(
+            LOGGER,
+            "camera_gateway_starting",
+            camera_count=enabled_count,
+        )
+
         for config in self.manifest.cameras:
             if not config.enabled:
                 continue
@@ -135,9 +152,14 @@ class ThreadedLiveGateway:
             self.health.camera_stopped(camera.camera_id)
         self._threads.clear()
         self._cameras.clear()
+        log_event(
+            LOGGER,
+            "camera_gateway_stopped",
+        )
 
     def _run_camera(self, camera: LiveCameraReader) -> None:
         delay = self.reconnect_policy.initial_delay_s
+        recovering = False
         while not self._stop.is_set():
             try:
                 timestamp_ms, image = camera.read()
@@ -148,6 +170,13 @@ class ThreadedLiveGateway:
                     camera.camera_id,
                     monotonic_ms=arrival_monotonic_ms,
                 )
+                if recovering:
+                    log_event(
+                        LOGGER,
+                        "camera_stream_recovered",
+                        camera_id=camera.camera_id,
+                    )
+                    recovering = False
                 delay = self.reconnect_policy.initial_delay_s
                 frame_set = self.synchronizer.push(
                     camera_id=camera.camera_id,
@@ -158,6 +187,15 @@ class ThreadedLiveGateway:
                     self._callback(frame_set)
             except Exception as exc:
                 self.health.camera_error(camera.camera_id, exc)
+                log_event(
+                    LOGGER,
+                    "camera_stream_error",
+                    level=logging.WARNING,
+                    camera_id=camera.camera_id,
+                    error_type=type(exc).__name__,
+                    reconnect_delay_s=delay,
+                )
+                recovering = True
                 camera.close()
                 if self._stop.is_set():
                     return

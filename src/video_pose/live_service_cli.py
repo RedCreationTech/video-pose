@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import os
 
 from .auth import AuthManager
 from .live_service import create_managed_live_app
@@ -9,6 +11,10 @@ from .persistent_camera import build_persistent_camera_hub
 from .persistent_session_controller import PersistentLiveSessionController
 from .resilient_store import ResilientSessionStore
 from .runtime_config import load_analysis_config
+from .structured_log import configure_logging, log_event
+
+
+LOGGER = logging.getLogger("video_pose.service")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +28,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit-dir", default="output/sessions")
     parser.add_argument("--database-url")
     parser.add_argument("--autostart", action="store_true")
+    parser.add_argument(
+        "--log-format",
+        choices=["json", "text"],
+        default=os.getenv("VIDEO_POSE_LOG_FORMAT", "json"),
+    )
+    parser.add_argument(
+        "--log-level",
+        default=os.getenv("VIDEO_POSE_LOG_LEVEL", "INFO"),
+    )
     parser.add_argument(
         "--reconcile-on-start",
         action="store_true",
@@ -43,6 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    configure_logging(
+        log_format=args.log_format,
+        level=args.log_level,
+    )
+    log_event(
+        LOGGER,
+        "service_starting",
+        config_path=args.config,
+        host=args.host,
+        port=args.port,
+        database_configured=bool(args.database_url),
+        auth_enabled=args.auth_enabled,
+        reconcile_on_start=args.reconcile_on_start,
+    )
     try:
         import uvicorn
     except ImportError as exc:
@@ -66,6 +95,14 @@ def main() -> int:
         if args.reconcile_on_start:
             reconciliation = repository.reconcile(
                 args.audit_dir
+            )
+            log_event(
+                LOGGER,
+                "startup_reconciliation_completed",
+                repaired_count=reconciliation.repaired_count,
+                skipped_count=reconciliation.skipped_count,
+                failed_count=reconciliation.failed_count,
+                incomplete_count=reconciliation.incomplete_count,
             )
             if reconciliation.failed_count:
                 raise RuntimeError(
@@ -98,11 +135,22 @@ def main() -> int:
         autostart=args.autostart,
         auth=auth,
     )
+    log_event(
+        LOGGER,
+        "service_runtime_constructed",
+        capture_backend=loaded.config.live.backend.value,
+        timestamp_source=(
+            loaded.config.live.native_timestamp_source.value
+            if loaded.config.live.backend.value == "gstreamer-native"
+            else "arrival"
+        ),
+    )
     uvicorn.run(
         app,
         host=args.host,
         port=args.port,
-        log_level="info",
+        log_level=args.log_level.lower(),
+        log_config=None,
     )
     return 0
 

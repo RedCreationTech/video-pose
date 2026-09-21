@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -13,7 +14,11 @@ from .persistence_reconcile import (
 )
 from .session_audit import SessionAuditMetadata
 from .session_store import SessionStore
+from .structured_log import log_event
 from .violation_review import ViolationReviewRequest
+
+
+LOGGER = logging.getLogger("video_pose.persistence")
 
 
 class PersistenceStatus(StrEnum):
@@ -280,11 +285,24 @@ class ResilientSessionStore:
             )
 
     def _mark_success(self) -> None:
+        recovered = False
         with self._lock:
+            recovered = self._status == PersistenceStatus.DEGRADED
             self._status = PersistenceStatus.READY
             self._last_error = None
+        if recovered:
+            log_event(
+                LOGGER,
+                "persistence_connectivity_recovered",
+            )
 
     def _mark_write_error(self, exc: Exception) -> None:
+        log_event(
+            LOGGER,
+            "persistence_write_error",
+            level=logging.ERROR,
+            error_type=type(exc).__name__,
+        )
         with self._lock:
             self._status = PersistenceStatus.DEGRADED
             self._write_errors_total += 1
@@ -303,6 +321,12 @@ class ResilientSessionStore:
                 )
 
     def _mark_read_error(self, exc: Exception) -> None:
+        log_event(
+            LOGGER,
+            "persistence_read_error",
+            level=logging.WARNING,
+            error_type=type(exc).__name__,
+        )
         with self._lock:
             self._status = PersistenceStatus.DEGRADED
             self._read_errors_total += 1

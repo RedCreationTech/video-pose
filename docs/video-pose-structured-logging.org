@@ -1,0 +1,109 @@
+#+TITLE: Video Pose Structured Event Logging
+#+SUBTITLE: JSON Business Events with Session, Camera and Recovery Correlation
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+Metrics answer "how much" and "how often".
+
+Structured events answer "what happened to this Session, camera or recovery operation".
+
+Video Pose business logs now use Python standard logging with machine-readable JSON by default.
+
+* 2. Event format
+
+Example:
+
+#+BEGIN_SRC json
+{"timestamp":"2026-09-21T00:00:00+00:00","level":"ERROR","logger":"video_pose.session","event":"session_quality_violation","session_id":"s1","rule_id":"SYSTEM-QUALITY-SYNC","event_id":"quality-sync-1","severity":"CRITICAL"}
+#+END_SRC
+
+Useful correlation fields include:
+
+- session_id.
+- camera_id.
+- rule_id.
+- event_id.
+- workstation_id.
+- recovery/reconciliation counters.
+
+* 3. Security
+
+The logging helper recursively redacts keys containing:
+
+- token.
+- password.
+- secret.
+- authorization.
+- cookie.
+- database_url.
+- uri.
+
+Bearer-like string values and credential-bearing URI strings are also redacted.
+
+Camera open exceptions no longer contain the RTSP URI. They expose only camera_id.
+
+* 4. Core events
+
+Camera:
+
+- camera_gateway_starting.
+- camera_stream_error.
+- camera_stream_recovered.
+- camera_gateway_stopped.
+
+Session:
+
+- persistent_runtime_started.
+- session_started.
+- session_start_failed.
+- session_quality_violation.
+- session_finished.
+- incomplete_session_recovered.
+
+Persistence:
+
+- persistence_write_error.
+- persistence_read_error.
+- persistence_connectivity_recovered.
+- persistence_reconciled.
+- startup_reconciliation_completed.
+
+Evidence:
+
+- evidence_queue_drop.
+- evidence_worker_error.
+
+Service:
+
+- service_starting.
+- service_runtime_constructed.
+
+* 5. Configuration
+
+Environment:
+
+#+BEGIN_SRC text
+VIDEO_POSE_LOG_FORMAT=json
+VIDEO_POSE_LOG_LEVEL=INFO
+#+END_SRC
+
+CLI:
+
+#+BEGIN_SRC sh
+video-pose-serve \
+  --log-format json \
+  --log-level INFO \
+  ...
+#+END_SRC
+
+Text mode exists for local development.
+
+* 6. Docker
+
+The production Compose template defaults to JSON business logs.
+
+Docker/container runtime can forward stdout to Loki, Elasticsearch, OpenSearch or another site logging platform.
+
+No external logging SDK is required for the Edge runtime.

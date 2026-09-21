@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import threading
 import uuid
 from collections.abc import Callable
@@ -39,7 +40,11 @@ from .session_runtime import (
 )
 from .session_store import SessionStore
 from .storage_health import sample_runtime_storage
+from .structured_log import log_event
 from .violation_review import ViolationReviewRequest
+
+
+LOGGER = logging.getLogger("video_pose.session")
 
 
 def _utc_now() -> str:
@@ -97,6 +102,20 @@ class PersistentLiveSessionController:
         if self.model_pool is not None:
             self.model_pool.load()
         self.hub.start()
+        log_event(
+            LOGGER,
+            "persistent_runtime_started",
+            workstation_id=getattr(
+                self.hub.manifest,
+                "workstation_id",
+                "unknown",
+            ),
+            model_pool_loaded=(
+                self.model_pool.loaded
+                if self.model_pool is not None
+                else None
+            ),
+        )
 
     def shutdown(self) -> None:
         current = self.current()
@@ -203,7 +222,14 @@ class PersistentLiveSessionController:
 
             try:
                 runtime.start(self._handle_update)
-            except Exception:
+            except Exception as exc:
+                log_event(
+                    LOGGER,
+                    "session_start_failed",
+                    level=logging.ERROR,
+                    session_id=session_id,
+                    error_type=type(exc).__name__,
+                )
                 self._runtime = None
                 self._state = None
                 final_payload = {"error": "session runtime start failed"}
@@ -219,6 +245,14 @@ class PersistentLiveSessionController:
                         status=ManagedSessionStatus.ABORTED.value,
                     )
                 raise
+            log_event(
+                LOGGER,
+                "session_started",
+                session_id=session_id,
+                workstation_id=state.workstation_id,
+                operation=state.operation,
+                rule_set_version=rule_set.version,
+            )
             return state.model_copy(deep=True)
 
     def stop(self, session_id: str) -> RuleSessionUpdate:
@@ -320,6 +354,14 @@ class PersistentLiveSessionController:
             request,
             recovered_by=recovered_by,
         )
+        log_event(
+            LOGGER,
+            "incomplete_session_recovered",
+            level=logging.WARNING,
+            session_id=session_id,
+            recovered_by=recovered_by,
+            final_status=recovery.final_status,
+        )
         reconciliation = None
         if self.repository is not None:
             method = getattr(self.repository, "reconcile", None)
@@ -340,6 +382,14 @@ class PersistentLiveSessionController:
                 "persistence reconciliation is unavailable"
             )
         report = method(str(self.audit.root))
+        log_event(
+            LOGGER,
+            "persistence_reconciled",
+            repaired_count=report.repaired_count,
+            skipped_count=report.skipped_count,
+            failed_count=report.failed_count,
+            incomplete_count=report.incomplete_count,
+        )
         return report.model_dump(mode="json")
 
     def persistence_health(self) -> dict[str, Any]:
@@ -548,6 +598,18 @@ class PersistentLiveSessionController:
             return
 
         payload = live_update_payload(update)
+        if isinstance(update, SessionQualityUpdate):
+            for violation in update.rule_update.new_violations:
+                log_event(
+                    LOGGER,
+                    "session_quality_violation",
+                    level=logging.ERROR,
+                    session_id=state.session_id,
+                    rule_id=violation.rule_id,
+                    event_id=violation.event_id,
+                    violation_type=violation.type,
+                    severity=violation.severity.value,
+                )
         try:
             self.audit.append_payload(
                 state.session_id,
@@ -746,4 +808,13 @@ class PersistentLiveSessionController:
             self._state.status = status
             self._state.ended_at = ended_at
             self._runtime = None
+            log_event(
+                LOGGER,
+                "session_finished",
+                session_id=session_id,
+                status=status.value,
+                passed=final.result.passed,
+                score=final.result.score,
+                violation_count=len(final.result.violations),
+            )
             return final

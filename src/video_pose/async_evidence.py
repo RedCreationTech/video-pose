@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import time
@@ -15,7 +16,11 @@ from .evidence_retention import (
 from .frames import DecodedFrame
 from .live_evidence import LiveEvidenceBuffer, LiveEvidenceManifest
 from .live_health import EvidenceHealthSnapshot
+from .structured_log import log_event
 from .video_replay import FrameRef, SynchronizedFrameSet
+
+
+LOGGER = logging.getLogger("video_pose.evidence")
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +125,15 @@ class AsyncLiveEvidenceRecorder:
                 pass
             with self._lock:
                 self._dropped_total += 1
+                dropped_total = self._dropped_total
+            if dropped_total == 1 or dropped_total % 100 == 0:
+                log_event(
+                    LOGGER,
+                    "evidence_queue_drop",
+                    level=logging.WARNING,
+                    dropped_total=dropped_total,
+                    queue_capacity=self.queue_size,
+                )
             self._queue.put_nowait(batch)
 
     def wait_until_idle(self) -> None:
@@ -253,9 +267,17 @@ class AsyncLiveEvidenceRecorder:
                     self._maybe_cleanup()
                 with self._lock:
                     self._processed_total += 1
-            except Exception:
+            except Exception as exc:
                 with self._lock:
                     self._errors_total += 1
+                    errors_total = self._errors_total
+                log_event(
+                    LOGGER,
+                    "evidence_worker_error",
+                    level=logging.ERROR,
+                    error_type=type(exc).__name__,
+                    errors_total=errors_total,
+                )
             finally:
                 self._queue.task_done()
 
