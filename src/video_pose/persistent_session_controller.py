@@ -20,6 +20,7 @@ from .session_controller import (
     ManagedSessionStatus,
     SessionStartRequest,
 )
+from .session_quality import SessionQualityUpdate
 from .session_readiness import (
     SessionNotReadyError,
     SessionReadinessReport,
@@ -65,7 +66,7 @@ class PersistentLiveSessionController:
         self._lock = threading.RLock()
         self._runtime: SessionAnalysisRuntime | None = None
         self._state: ManagedSessionState | None = None
-        self._event_callback: Callable[[LiveAnalysisUpdate], Any] | None = None
+        self._event_callback: Callable[[Any], Any] | None = None
 
     def start_hub(self) -> None:
         if self.model_pool is not None:
@@ -83,7 +84,7 @@ class PersistentLiveSessionController:
 
     def set_event_callback(
         self,
-        callback: Callable[[LiveAnalysisUpdate], Any] | None,
+        callback: Callable[[Any], Any] | None,
     ) -> None:
         with self._lock:
             self._event_callback = callback
@@ -441,7 +442,10 @@ class PersistentLiveSessionController:
             filename,
         )
 
-    def _handle_update(self, update: LiveAnalysisUpdate) -> None:
+    def _handle_update(
+        self,
+        update: LiveAnalysisUpdate | SessionQualityUpdate,
+    ) -> None:
         with self._lock:
             state = self._state
             callback = self._event_callback
@@ -456,8 +460,13 @@ class PersistentLiveSessionController:
             None,
         )
         if callable(schedule_evidence):
-            timestamp_ms = update.trace.frame_set.reference_timestamp_ms
-            for rule_update in update.rule_updates:
+            timestamp_ms = float(payload["timestamp_ms"])
+            rule_updates = (
+                (update.rule_update,)
+                if isinstance(update, SessionQualityUpdate)
+                else update.rule_updates
+            )
+            for rule_update in rule_updates:
                 for violation in rule_update.new_violations:
                     evidence_id = schedule_evidence(
                         state.session_id,

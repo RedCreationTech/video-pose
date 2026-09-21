@@ -13,6 +13,10 @@ from .realtime_rules import RealtimeRuleSession, RuleSessionUpdate
 from .resource_usage import sample_process_resources
 from .runtime_builder import build_analysis_pipeline, build_rule_engine
 from .runtime_config import LoadedAnalysisConfig
+from .session_quality import (
+    SessionQualityMonitor,
+    SessionQualityUpdate,
+)
 from .video_replay import SynchronizedFrameSet
 
 
@@ -27,6 +31,7 @@ class SessionAnalysisRuntime:
         rule_session: RealtimeRuleSession,
         processing_queue_size: int = 2,
         resource_sample_every: int = 30,
+        quality_monitor: SessionQualityMonitor | None = None,
     ) -> None:
         if processing_queue_size < 1:
             raise ValueError("processing_queue_size must be >= 1")
@@ -37,13 +42,18 @@ class SessionAnalysisRuntime:
         self.rule_session = rule_session
         self.health = hub.health
         self.resource_sample_every = resource_sample_every
+        self.quality_monitor = quality_monitor
         self._processed_since_resource_sample = 0
         self._last_timestamp_ms = 0
-        self._callback: Callable[[LiveAnalysisUpdate], None] | None = None
+        self._callback: Callable[
+            [LiveAnalysisUpdate | SessionQualityUpdate],
+            None,
+        ] | None = None
         self._queue: queue.Queue[SynchronizedFrameSet] = queue.Queue(
             maxsize=processing_queue_size
         )
         self._worker: threading.Thread | None = None
+        self._quality_worker: threading.Thread | None = None
         self._stop = threading.Event()
         self._subscription_token: str | None = None
 
@@ -85,7 +95,10 @@ class SessionAnalysisRuntime:
 
     def start(
         self,
-        callback: Callable[[LiveAnalysisUpdate], None],
+        callback: Callable[
+            [LiveAnalysisUpdate | SessionQualityUpdate],
+            None,
+        ],
     ) -> None:
         if self._worker is not None:
             raise RuntimeError("session analysis runtime is already running")
@@ -101,6 +114,13 @@ class SessionAnalysisRuntime:
             daemon=True,
         )
         self._worker.start()
+        if self.quality_monitor is not None:
+            self._quality_worker = threading.Thread(
+                target=self._run_quality_monitor,
+                name="video-pose-session-quality",
+                daemon=True,
+            )
+            self._quality_worker.start()
         self._subscription_token = self.hub.subscribe(
             self.enqueue_frame_set
         )
@@ -113,12 +133,46 @@ class SessionAnalysisRuntime:
         if self._worker is not None:
             self._worker.join(timeout=5.0)
             self._worker = None
+        if self._quality_worker is not None:
+            self._quality_worker.join(timeout=5.0)
+            self._quality_worker = None
         self.health.set_queue_depth(0)
         self.health.record_resources(sample_process_resources())
         return self.rule_session.finish(self._last_timestamp_ms)
 
     def health_snapshot(self):
         return self.hub.health_snapshot()
+
+    def _run_quality_monitor(self) -> None:
+        assert self.quality_monitor is not None
+        interval_s = (
+            self.quality_monitor.config.poll_interval_ms
+            / 1000.0
+        )
+        while not self._stop.is_set():
+            now_monotonic_ms = (
+                time.monotonic_ns() / 1_000_000.0
+            )
+            incidents = self.quality_monitor.observe(
+                self.hub.health_snapshot(),
+                now_monotonic_ms=now_monotonic_ms,
+            )
+            for violation in incidents:
+                timestamp_ms = max(0, round(self._last_timestamp_ms))
+                rule_update = (
+                    self.rule_session.record_external_violation(
+                        violation,
+                        now_ms=timestamp_ms,
+                    )
+                )
+                if self._callback is not None:
+                    self._callback(
+                        SessionQualityUpdate(
+                            timestamp_ms=timestamp_ms,
+                            rule_update=rule_update,
+                        )
+                    )
+            self._stop.wait(interval_s)
 
     def _run_processing(self) -> None:
         while not self._stop.is_set() or not self._queue.empty():
@@ -168,9 +222,22 @@ def build_session_analysis_runtime(
         build_rule_engine(config),
         session_id=session_id,
     )
+    quality_monitor = (
+        SessionQualityMonitor(
+            config.config.session_quality,
+            camera_ids=[
+                camera.camera_id
+                for camera in hub.manifest.cameras
+                if camera.enabled
+            ],
+        )
+        if config.config.session_quality.enabled
+        else None
+    )
     return SessionAnalysisRuntime(
         hub=hub,
         pipeline=pipeline,
         rule_session=rule_session,
         processing_queue_size=processing_queue_size,
+        quality_monitor=quality_monitor,
     )

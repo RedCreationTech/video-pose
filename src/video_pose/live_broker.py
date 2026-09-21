@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from .live_payload import live_update_payload
-from .live_runtime import LiveAnalysisUpdate
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +21,7 @@ class LiveEventBroker:
         self._sequence = 0
         self._latest: LiveEventEnvelope | None = None
 
-    def publish(self, update: LiveAnalysisUpdate) -> LiveEventEnvelope:
+    def publish(self, update: Any) -> LiveEventEnvelope:
         with self._condition:
             self._sequence += 1
             envelope = LiveEventEnvelope(

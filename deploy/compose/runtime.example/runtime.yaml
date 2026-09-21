@@ -72,3 +72,17 @@ calibration_health:
   calibration: /etc/video-pose/perspective-calibration.yaml
   control_points: /etc/video-pose/calibration-control-points.yaml
   max_rmse: 5.0
+
+
+session_quality:
+  enabled: true
+  monitor_cameras: true
+  monitor_sync: true
+  poll_interval_ms: 500
+  camera_grace_ms: 3000
+  max_camera_staleness_ms: 3000
+  sync_grace_ms: 3000
+  max_sync_miss_ratio: 0.30
+  max_sync_p99_skew_ms: 30
+  max_abs_sync_drift_ms_per_minute: 3.0
+  severity: CRITICAL

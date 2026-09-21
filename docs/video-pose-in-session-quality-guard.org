@@ -1,0 +1,71 @@
+#+TITLE: Video Pose In-session Quality Guard
+#+SUBTITLE: Sustained Camera/Sync Failures Become CRITICAL System Violations
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Why
+
+A Session can start healthy and become unobservable later.
+
+If one camera disconnects or synchronized output stalls, simply producing fewer ActionEvents is unsafe. A final PASS could otherwise mean "no violation was seen" rather than "the operation was compliant".
+
+* 2. System violation
+
+Sustained observability failure produces:
+
+#+BEGIN_SRC text
+type = SYSTEM_QUALITY
+step = SYSTEM
+severity = CRITICAL
+#+END_SRC
+
+The violation flows through the existing RuleSession, JSONL audit, SQL repository, WebSocket, Evidence scheduling and review pipeline.
+
+A CRITICAL quality violation makes the Session score 0 and =passed=false=.
+
+* 3. Camera guard
+
+Per enabled camera:
+
+- state must remain ONLINE.
+- a local monotonic frame arrival must remain fresh.
+- default grace before incident: 3000 ms.
+- default max staleness: 3000 ms.
+
+Camera health now always stores local monotonic arrival time. Source/PTS/RFC7273 timestamps remain separate and are used only for multi-view synchronization.
+
+* 4. Sync guard
+
+The monitor uses Session-local counter deltas for sync miss ratio so startup history does not poison a new Session.
+
+It also checks:
+
+- synchronized frame output progress.
+- P99 skew.
+- maximum absolute clock drift.
+
+Default grace is 3000 ms.
+
+* 5. Recovery
+
+One incident is emitted for one continuous failure period.
+
+When the condition recovers, the guard rearms. A later outage becomes a new event with a new event_id.
+
+* 6. Production defaults
+
+The Edge runtime template enables:
+
+#+BEGIN_SRC yaml
+session_quality:
+  enabled: true
+  monitor_cameras: true
+  monitor_sync: true
+  camera_grace_ms: 3000
+  max_camera_staleness_ms: 3000
+  sync_grace_ms: 3000
+  max_sync_miss_ratio: 0.30
+  max_sync_p99_skew_ms: 30
+  max_abs_sync_drift_ms_per_minute: 3.0
+  severity: CRITICAL
+#+END_SRC

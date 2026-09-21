@@ -141,9 +141,12 @@ class ThreadedLiveGateway:
         while not self._stop.is_set():
             try:
                 timestamp_ms, image = camera.read()
+                arrival_monotonic_ms = (
+                    time.monotonic_ns() / 1_000_000.0
+                )
                 self.health.camera_frame(
                     camera.camera_id,
-                    monotonic_ms=timestamp_ms,
+                    monotonic_ms=arrival_monotonic_ms,
                 )
                 delay = self.reconnect_policy.initial_delay_s
                 frame_set = self.synchronizer.push(

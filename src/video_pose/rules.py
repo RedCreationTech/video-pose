@@ -103,7 +103,7 @@ class RuleEngine:
         if finalize:
             self._finalize_missing_required_steps(state)
 
-        score = self._score(state.violations)
+        score = self.score_violations(state.violations)
         passed = not any(
             violation.severity.value in {"MAJOR", "CRITICAL"}
             for violation in state.violations
@@ -529,7 +529,7 @@ class RuleEngine:
             )
 
     @staticmethod
-    def _score(violations: list[Violation]) -> float:
+    def score_violations(violations: list[Violation]) -> float:
         penalties = {
             "INFO": 0.0,
             "MINOR": 2.0,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -94,6 +95,27 @@ def effective_capture_timestamp_source(
     return CaptureTimestampSource.ARRIVAL
 
 
+class SessionQualityRuntimeConfig(BaseModel):
+    enabled: bool = False
+    monitor_cameras: bool = True
+    monitor_sync: bool = True
+    poll_interval_ms: int = Field(default=500, ge=100)
+    camera_grace_ms: int = Field(default=3000, ge=0)
+    max_camera_staleness_ms: int = Field(default=3000, ge=1)
+    sync_grace_ms: int = Field(default=3000, ge=0)
+    max_sync_miss_ratio: float = Field(
+        default=0.30,
+        ge=0.0,
+        le=1.0,
+    )
+    max_sync_p99_skew_ms: float = Field(default=30.0, ge=0.0)
+    max_abs_sync_drift_ms_per_minute: float = Field(
+        default=3.0,
+        ge=0.0,
+    )
+    severity: Literal["MINOR", "MAJOR", "CRITICAL"] = "CRITICAL"
+
+
 class CalibrationHealthRuntimeConfig(BaseModel):
     enabled: bool = False
     calibration: str | None = None
@@ -172,6 +194,9 @@ class OfflineAnalysisConfig(BaseModel):
     )
     calibration_health: CalibrationHealthRuntimeConfig = Field(
         default_factory=CalibrationHealthRuntimeConfig
+    )
+    session_quality: SessionQualityRuntimeConfig = Field(
+        default_factory=SessionQualityRuntimeConfig
     )
     action_min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
 
