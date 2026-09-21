@@ -20,6 +20,7 @@ from .live_payload import live_update_payload
 from .live_runtime import LiveAnalysisUpdate
 from .model_pool import PersistentModelPool
 from .persistent_camera import PersistentCameraHub
+from .preflight import build_preflight_report
 from .realtime_rules import RuleSessionUpdate
 from .runtime_config import LoadedAnalysisConfig
 from .runtime_identity import build_runtime_release_identity
@@ -355,6 +356,23 @@ class PersistentLiveSessionController:
 
     def runtime_version(self) -> dict[str, Any]:
         return self.release_identity.model_dump(mode="json")
+
+    def preflight(self) -> dict[str, Any]:
+        report = build_preflight_report(
+            workstation_id=str(
+                getattr(
+                    self.hub.manifest,
+                    "workstation_id",
+                    "unknown",
+                )
+            ),
+            readiness=self.readiness(),
+            health=self.health_snapshot(),
+            cameras=self.camera_catalog(),
+            release_identity=self.runtime_version(),
+            persistence=self.persistence_health(),
+        )
+        return report.model_dump(mode="json")
 
     def camera_catalog(self) -> list[dict[str, Any]]:
         return self.hub.camera_catalog()

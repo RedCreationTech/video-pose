@@ -203,6 +203,18 @@ def create_managed_live_app(
             }
         return method()
 
+    @app.get("/api/v1/runtime/preflight")
+    def runtime_preflight(
+        _principal: Any = Depends(require(Permission.RUNTIME_READ)),
+    ) -> Any:
+        method = getattr(controller, "preflight", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="runtime preflight is unavailable",
+            )
+        return method()
+
     @app.get("/api/v1/cameras")
     def camera_catalog(
         _principal: Any = Depends(require(Permission.CAMERA_READ)),

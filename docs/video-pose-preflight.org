@@ -1,0 +1,95 @@
+#+TITLE: Video Pose Preflight Checklist
+#+SUBTITLE: Safe, Printable Workstation Readiness Snapshot Before Operation
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+Readiness is a live gate.
+
+For shift-start checks and field acceptance, operators also need one compact point-in-time record that can be printed or archived.
+
+Video Pose 0.58 adds a sanitized Preflight Report.
+
+* 2. API
+
+#+BEGIN_SRC text
+GET /api/v1/runtime/preflight
+#+END_SRC
+
+Permission:
+
+#+BEGIN_SRC text
+runtime:read
+#+END_SRC
+
+* 3. Included Data
+
+The report contains:
+
+- generated_at.
+- workstation_id.
+- overall ready.
+- failed check names.
+- PASS/FAIL for every Readiness check.
+- safe Camera status summary.
+- application/Git/image/release identity.
+- model release id.
+- Model Warmup status/latency.
+- Sync emitted count/miss ratio/P99/drift.
+- Evidence errors/drop/capacity.
+- Audit status/error count.
+- logical storage free ratio/GB.
+- Persistence connectivity.
+- Reconciliation status/counters.
+
+* 4. Data Minimization
+
+The Preflight report intentionally excludes:
+
+- RTSP URI.
+- Bearer Tokens.
+- database URL.
+- persistence error text.
+- absolute storage paths.
+- model/config filesystem paths.
+- raw Readiness detail strings that may contain paths.
+
+Each Readiness check is reduced to:
+
+#+BEGIN_SRC text
+name
+passed
+PASS/FAIL
+#+END_SRC
+
+* 5. Console
+
+The Edge Console includes a =班前 Preflight Checklist= panel.
+
+Actions:
+
+- Refresh.
+- Export JSON.
+- Print.
+
+Export is generated locally from the sanitized API response.
+
+* 6. Print Mode
+
+Print mode hides the rest of the operations Console and prints only the Preflight panel.
+
+This creates a concise班前 or acceptance checklist without printing the Bearer Token input, Evidence images or review history.
+
+* 7. Relationship to Release Acceptance
+
+Preflight is an operational snapshot.
+
+It does not replace:
+
+- Golden Replay.
+- Fault Matrix.
+- 72h Managed Soak.
+- Release Acceptance report.
+
+A workstation can be READY now while a release still lacks formal production acceptance evidence.
