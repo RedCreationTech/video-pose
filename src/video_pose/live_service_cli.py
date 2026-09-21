@@ -7,6 +7,7 @@ from .live_service import create_managed_live_app
 from .model_pool import build_persistent_model_pool
 from .persistent_camera import build_persistent_camera_hub
 from .persistent_session_controller import PersistentLiveSessionController
+from .persistence_reconcile import reconcile_audit_root
 from .resilient_store import ResilientSessionStore
 from .runtime_config import load_analysis_config
 
@@ -22,6 +23,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit-dir", default="output/sessions")
     parser.add_argument("--database-url")
     parser.add_argument("--autostart", action="store_true")
+    parser.add_argument(
+        "--reconcile-on-start",
+        action="store_true",
+        help=(
+            "Repair completed SQL sessions from immutable audit files "
+            "before the API starts."
+        ),
+    )
     parser.add_argument(
         "--auth-enabled",
         action="store_true",
@@ -51,9 +60,24 @@ def main() -> int:
             raise RuntimeError(
                 "database persistence requires the optional 'db' dependencies"
             ) from exc
-        repository = ResilientSessionStore(
-            SQLAlchemySessionRepository(args.database_url)
+        sql_repository = SQLAlchemySessionRepository(
+            args.database_url
         )
+        if args.reconcile_on_start:
+            reconciliation = reconcile_audit_root(
+                args.audit_dir,
+                sql_repository,
+            )
+            if reconciliation.failed_count:
+                raise RuntimeError(
+                    "persistence reconciliation failed: "
+                    + "; ".join(
+                        item.error or item.session_id
+                        for item in reconciliation.sessions
+                        if item.action == "FAILED"
+                    )
+                )
+        repository = ResilientSessionStore(sql_repository)
 
     hub = build_persistent_camera_hub(
         loaded,

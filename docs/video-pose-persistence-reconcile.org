@@ -1,0 +1,75 @@
+#+TITLE: Video Pose Audit-to-SQL Reconciliation
+#+SUBTITLE: Detect and Repair Query-store Gaps after Database Outages
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Why
+
+PostgreSQL becoming READY again only proves current connectivity.
+
+During the outage, immutable JSONL Audit may contain Actions, Violations or Reviews that never reached the SQL query store.
+
+Therefore recovery has two phases:
+
+#+BEGIN_SRC text
+database reachable
+      |
+      v
+persistence status READY
+      |
+      v
+Audit <-> SQL consistency reconciliation
+#+END_SRC
+
+* 2. Consistency model
+
+For every completed audit Session, Video Pose compares:
+
+- Action event_id set.
+- Violation stable identity = rule_id + step + event_id.
+- Step code set.
+- human review state.
+- final status.
+- final score.
+- final passed flag.
+
+This catches completed SQL Sessions that look healthy but missed updates during a transient outage.
+
+* 3. Repair
+
+If inconsistent:
+
+1. delete the SQL Session and its cascading child rows.
+2. replay metadata.json.
+3. replay updates.jsonl.
+4. replay final.json.
+5. replay reviews.jsonl by stable violation identity.
+6. inspect consistency again.
+
+Only completed Sessions are repaired by default. Incomplete/active audit directories are skipped.
+
+* 4. CLI
+
+#+BEGIN_SRC sh
+video-pose-reconcile \
+  --audit-dir /var/lib/video-pose/audit \
+  --database-url postgresql+psycopg://...
+#+END_SRC
+
+Use =--include-incomplete= only during controlled recovery when no Session is active.
+
+* 5. Edge startup
+
+Production entrypoint enables reconciliation by default after migration and before the API starts:
+
+#+BEGIN_SRC text
+Alembic migrate
+ -> video-pose-serve --reconcile-on-start
+ -> API lifecycle starts
+#+END_SRC
+
+The reconciliation pass is cheap for healthy history because consistent completed Sessions are skipped.
+
+* 6. Idempotence
+
+A second reconciliation pass over already consistent data reports SKIPPED and performs no rewrite.

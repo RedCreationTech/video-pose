@@ -52,4 +52,8 @@ if is_true "${VIDEO_POSE_AUTH_ENABLED:-0}"; then
     set -- "$@" --auth-enabled
 fi
 
+if [ -n "$DATABASE_URL" ] && is_true "${VIDEO_POSE_DB_RECONCILE:-1}"; then
+    set -- "$@" --reconcile-on-start
+fi
+
 exec "$@"
