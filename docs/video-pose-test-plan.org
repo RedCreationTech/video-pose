@@ -778,3 +778,24 @@ The report combines:
 - SHA-256 of all input evidence.
 
 A quick run can pass fast gates but cannot set =production_ready=true= without real long-running Soak evidence.
+
+
+* 33. Acceptance Evidence Bundle
+
+After =video-pose-release-check= reports =production_ready=true=, archive the evidence:
+
+#+BEGIN_SRC sh
+video-pose-acceptance-bundle create \
+  --acceptance output/release-acceptance.json \
+  --extra deploy/compose/runtime/model-release.json \
+  --output output/video-pose-release-bundle.zip
+#+END_SRC
+
+Verify before handoff:
+
+#+BEGIN_SRC sh
+video-pose-acceptance-bundle verify \
+  --bundle output/video-pose-release-bundle.zip
+#+END_SRC
+
+The bundler rechecks source evidence SHA-256 before packaging and generates a SHA-256 sidecar for the final ZIP.

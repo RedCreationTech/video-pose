@@ -1,0 +1,94 @@
+#+TITLE: Video Pose Acceptance Evidence Bundle
+#+SUBTITLE: Integrity-checked ZIP Archive for Production Release Evidence
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Purpose
+
+A production acceptance result should be easy to archive as one unit.
+
+=video-pose-acceptance-bundle= packages the release acceptance report and its explicitly referenced evidence files into one ZIP with an internal integrity manifest.
+
+* 2. Create
+
+#+BEGIN_SRC sh
+video-pose-acceptance-bundle create \
+  --acceptance output/release-acceptance.json \
+  --extra deploy/compose/runtime/model-release.json \
+  --output output/video-pose-release-bundle.zip
+#+END_SRC
+
+By default, create refuses an acceptance report where:
+
+#+BEGIN_SRC text
+production_ready = false
+#+END_SRC
+
+For a development-only archive, use =--allow-not-ready=.
+
+* 3. Integrity Layers
+
+Before creating the ZIP:
+
+1. every artifact already listed in release-acceptance.json must exist.
+2. its SHA-256 must still match the acceptance report.
+
+Inside the ZIP:
+
+- =acceptance/release-acceptance.json=.
+- explicitly referenced acceptance artifacts.
+- optional =--extra= files.
+- =bundle-manifest.json=.
+
+After ZIP creation:
+
+#+BEGIN_SRC text
+video-pose-release-bundle.zip.sha256
+#+END_SRC
+
+is generated for the whole archive.
+
+* 4. Verify
+
+#+BEGIN_SRC sh
+video-pose-acceptance-bundle verify \
+  --bundle output/video-pose-release-bundle.zip
+#+END_SRC
+
+Verification checks every archive entry against =bundle-manifest.json=.
+
+* 5. Secret Boundary
+
+The bundler does not recursively discover site files.
+
+It only includes:
+
+- files explicitly listed in the acceptance report.
+- files explicitly supplied with =--extra=.
+
+This avoids automatically collecting camera manifests, RTSP credentials, bearer tokens or unrelated site configuration.
+
+Do not pass secret-bearing files through =--extra=.
+
+* 6. Model Weights
+
+Large model weight binaries are not automatically copied into the acceptance ZIP.
+
+Their identity is already represented by:
+
+- model release id.
+- model release manifest SHA-256.
+- per-artifact weight SHA-256.
+
+A controlled organization can separately archive the model binaries in its model registry.
+
+* 7. Recommended Archive Set
+
+For a production handoff, keep:
+
+- acceptance ZIP.
+- acceptance ZIP SHA-256 sidecar.
+- immutable Edge image digest.
+- model registry artifact referenced by Model Release Manifest.
+
+This is enough to prove which release was accepted and whether the acceptance evidence has changed.
