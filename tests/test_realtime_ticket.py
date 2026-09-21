@@ -3,8 +3,8 @@ import time
 import pytest
 
 from video_pose.auth import (
-    AuthPrincipal,
     AuthenticationError,
+    AuthPrincipal,
     Permission,
     Role,
 )

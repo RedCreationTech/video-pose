@@ -73,7 +73,6 @@ def create_live_app(
     app.state.runtime = runtime
     app.state.broker = event_broker
     app.state.auth = auth_manager
-    app.state.realtime_tickets = ticket_manager
     _install_trace_middleware(app)
 
     _register_runtime_routes(
@@ -148,6 +147,7 @@ def create_managed_live_app(
     app.state.controller = controller
     app.state.broker = event_broker
     app.state.auth = auth_manager
+    app.state.realtime_tickets = ticket_manager
     _install_trace_middleware(app)
 
     require = _build_http_require(

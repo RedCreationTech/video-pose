@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel
 
-from .auth import AuthPrincipal, AuthenticationError
+from .auth import AuthenticationError, AuthPrincipal
 
 
 class RealtimeTicketResponse(BaseModel):
