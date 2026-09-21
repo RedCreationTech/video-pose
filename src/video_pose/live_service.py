@@ -25,6 +25,7 @@ from .trace_context import (
     use_trace_context,
 )
 from .violation_review import ViolationReviewRequest
+from .web_console import register_web_console
 
 
 def create_live_app(
@@ -165,6 +166,7 @@ def create_managed_live_app(
         WebSocketDisconnect,
         JSONResponse,
     )
+    register_web_console(app, Response)
 
     @app.get("/api/v1/auth/me")
     def auth_me(

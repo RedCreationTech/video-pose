@@ -1,0 +1,116 @@
+#+TITLE: Video Pose Edge Web Console
+#+SUBTITLE: Zero-build Industrial Operations Console for One Workstation
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+Video Pose 0.51 adds a self-contained Edge operations Console.
+
+The goal is to let an operator, supervisor, reviewer or engineer run the existing production workflow without Postman.
+
+The Console does not introduce a second business logic layer. Every operation calls the existing RBAC-protected REST APIs.
+
+* 2. URL
+
+#+BEGIN_SRC text
+/console
+#+END_SRC
+
+Assets are served directly by the managed FastAPI service:
+
+#+BEGIN_SRC text
+/console/
+/console/style.css
+/console/app.js
+#+END_SRC
+
+No Node/Vite build is required.
+
+* 3. Current Functions
+
+- Bearer Token connection.
+- role/permission awareness.
+- four-camera state/FPS/reconnect/backend/timestamp source.
+- authenticated latest JPEG snapshots.
+- Session Readiness checks.
+- Session start, normal stop and abort.
+- current Session ID/operator/operation/trace.
+- current rule evaluation.
+- Step states.
+- Violations.
+- Score and PASS/FAIL.
+- processing/resource/Audit/Evidence health.
+- Release Identity.
+- Persistence connectivity and reconciliation state.
+- manual reconciliation for ADMIN/ENGINEER.
+- Pending Review confirm/dismiss.
+
+* 4. Authentication
+
+The static HTML/CSS/JS contains no secret.
+
+Business requests continue through existing RBAC.
+
+The user enters a Bearer Token into a password field.
+
+The token is:
+
+- held only in page memory.
+- sent in the Authorization header.
+- not stored in localStorage.
+- not written to the URL.
+- not placed in camera snapshot URLs.
+
+* 5. Camera Snapshot Security
+
+Browser image tags cannot add an Authorization header.
+
+The Console therefore fetches each snapshot through authenticated JavaScript fetch, converts the response to a Blob and displays a temporary object URL.
+
+Old Blob URLs are revoked when a newer snapshot replaces them.
+
+* 6. Why REST Polling First
+
+Browser WebSocket APIs cannot attach an arbitrary Authorization header.
+
+The existing backend supports a query token for compatibility, but a query token can appear in proxy or access logs.
+
+Console v1 therefore polls protected REST endpoints every two seconds.
+
+A future version can switch to WebSocket after adding short-lived WS tickets or a same-site authenticated cookie.
+
+* 7. Frontend Security
+
+Dynamic business content is rendered using DOM =textContent=.
+
+The Console does not render API content through dynamic =innerHTML=.
+
+Response headers include:
+
+- Content-Security-Policy.
+- X-Content-Type-Options: nosniff.
+- Referrer-Policy: no-referrer.
+- Cache-Control: no-store.
+
+CSP allows only same-origin script/style/network access and local Blob/data images.
+
+* 8. Offline Industrial Network
+
+The Console has no external runtime dependency:
+
+- no CDN.
+- no analytics.
+- no web fonts.
+- no external JavaScript.
+- no external CSS.
+
+It remains usable on an isolated industrial LAN.
+
+* 9. Scope Boundary
+
+Console 0.51 is an operations Console.
+
+Rules, calibration, camera manifests, Model Release and deployment secrets remain version-controlled release artifacts.
+
+This keeps safety-critical configuration changes outside the normal operator UI during the first production phase.

@@ -3,7 +3,7 @@
 
 * 当前版本
 
-Video Pose 0.50 已形成单工位生产 Edge 闭环:
+Video Pose 0.51 已形成单工位生产 Edge 闭环:
 
 #+BEGIN_SRC text
 4 x RTSP Cameras
@@ -287,3 +287,26 @@ docs/video-pose-test-plan.org
 - 跑 72h Managed Soak.
 - 记录真实 Accuracy/Recall/False Alarm.
 - 完成现场 Go/No-Go.
+
+
+* Edge Web Console
+
+Managed service now includes a zero-build on-device operations console:
+
+#+BEGIN_SRC text
+/console
+#+END_SRC
+
+The Console covers:
+
+- Bearer Token connection and RBAC.
+- four-camera health and authenticated snapshots.
+- Session Readiness.
+- Session start/stop/abort.
+- current evaluation, Steps and Violations.
+- runtime resource health.
+- Release Identity.
+- Persistence/Reconciliation.
+- Pending Review confirm/dismiss.
+
+The token stays in page memory and is sent in the Authorization header. It is not stored in localStorage or placed in URLs.
