@@ -220,7 +220,7 @@ input{color:var(--text);background:#0a121a;border:1px solid #31465b;border-radiu
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-box{background:#0b141d;border:1px solid #233649;border-radius:7px;padding:10px;color:#c6d2dd;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px}.check-list,.compact-list,.review-list{display:grid;gap:7px}.check-row,.compact-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;padding:8px;border:1px solid #24384b;border-radius:6px;background:#0d161f}.check-name{font-weight:650}.check-detail{color:var(--muted);font-size:11px;overflow-wrap:anywhere}.indicator{width:9px;height:9px;border-radius:50%;margin-top:4px;background:var(--muted)}.indicator.good{background:var(--green);box-shadow:0 0 8px rgba(71,212,135,.5)}.indicator.bad{background:var(--red);box-shadow:0 0 8px rgba(255,109,118,.45)}
 .split-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}.health-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.health-item{background:#0d161f;border:1px solid #24384b;border-radius:6px;padding:9px}.health-item span{display:block;color:var(--muted);font-size:11px}.health-item strong{display:block;margin-top:3px;overflow-wrap:anywhere}
 .review-row{border:1px solid #2a3e51;border-radius:7px;background:#0d161f;padding:10px;display:grid;grid-template-columns:1fr auto;gap:12px}.review-actions{display:flex;gap:6px;align-items:center}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.empty-state{color:var(--muted);padding:15px;text-align:center}
-.operations-lower{margin-top:12px}.history-list{display:grid;gap:7px;max-height:360px;overflow:auto}.history-row{border:1px solid #26394c;border-radius:7px;background:#0d161f;padding:9px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.history-row button{padding:6px 9px}.history-title{font-size:12px;font-weight:700}.history-meta{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.evidence-panel{margin-top:12px}.evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:10px;margin-top:10px}.evidence-card{border:1px solid #26394c;border-radius:8px;background:#0d161f;padding:10px}.evidence-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}.evidence-timeline{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:10px 0}.evidence-timeline input[type="range"]{width:100%;accent-color:var(--cyan);padding:0;border:0;background:transparent}.timeline-edge,.timeline-time{font-size:10px;color:var(--muted);white-space:nowrap}.timeline-time{min-width:72px;text-align:right}.evidence-images{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.evidence-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:#111b26;border:1px solid #233649;border-radius:5px}.evidence-caption{font-size:10px;color:var(--muted);margin-top:3px}.danger-text{color:var(--red)}.timeline-panel{margin-top:12px}.timeline-list{display:grid;gap:0}.timeline-event{display:grid;grid-template-columns:105px 16px 1fr;gap:9px;min-height:58px}.timeline-stamp{font-size:10px;color:var(--muted);padding-top:3px;text-align:right}.timeline-rail{position:relative}.timeline-dot{position:absolute;top:5px;left:4px;width:9px;height:9px;border-radius:50%;background:var(--cyan);z-index:2}.timeline-line{position:absolute;left:8px;top:14px;bottom:-5px;width:1px;background:#2b4358}.timeline-event:last-child .timeline-line{display:none}.timeline-body{padding:0 0 12px}.timeline-title{font-size:12px;font-weight:700}.timeline-detail{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
+.operations-lower{margin-top:12px}.history-list{display:grid;gap:7px;max-height:360px;overflow:auto}.history-row{border:1px solid #26394c;border-radius:7px;background:#0d161f;padding:9px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.history-row button{padding:6px 9px}.history-title{font-size:12px;font-weight:700}.history-meta{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.evidence-panel{margin-top:12px}.evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:10px;margin-top:10px}.evidence-card{border:1px solid #26394c;border-radius:8px;background:#0d161f;padding:10px}.evidence-card.focused{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(66,199,239,.16),0 0 24px rgba(66,199,239,.12)}.evidence-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}.evidence-timeline{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:10px 0}.evidence-timeline input[type="range"]{width:100%;accent-color:var(--cyan);padding:0;border:0;background:transparent}.timeline-edge,.timeline-time{font-size:10px;color:var(--muted);white-space:nowrap}.timeline-time{min-width:72px;text-align:right}.evidence-images{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.evidence-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:#111b26;border:1px solid #233649;border-radius:5px}.evidence-caption{font-size:10px;color:var(--muted);margin-top:3px}.danger-text{color:var(--red)}.timeline-panel{margin-top:12px}.timeline-list{display:grid;gap:0}.timeline-event{display:grid;grid-template-columns:105px 16px 1fr;gap:9px;min-height:58px}.timeline-event.linked{cursor:pointer}.timeline-event.linked:hover .timeline-body{background:rgba(66,199,239,.04);border-radius:6px}.timeline-stamp{font-size:10px;color:var(--muted);padding-top:3px;text-align:right}.timeline-rail{position:relative}.timeline-dot{position:absolute;top:5px;left:4px;width:9px;height:9px;border-radius:50%;background:var(--cyan);z-index:2}.timeline-line{position:absolute;left:8px;top:14px;bottom:-5px;width:1px;background:#2b4358}.timeline-event:last-child .timeline-line{display:none}.timeline-body{padding:0 0 12px}.timeline-title{font-size:12px;font-weight:700}.timeline-detail{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
 footer{max-width:1600px;margin:0 auto;padding:14px 22px 24px;display:flex;justify-content:space-between;color:#64788d;font-size:11px}
 @media(max-width:1050px){.camera-grid,.kpi-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
 @media(max-width:650px){.topbar{position:static;padding:14px;align-items:flex-start;gap:10px}.badges{flex-wrap:wrap;justify-content:flex-end}.layout{padding:10px}.camera-grid,.kpi-grid,.evidence-grid{grid-template-columns:1fr}.form-row{align-items:stretch;flex-direction:column}.split-list,.health-grid{grid-template-columns:1fr}.review-row,.history-row,.alert-row{grid-template-columns:1fr}}"""
@@ -236,6 +236,7 @@ var state = {
   snapshots: new Map(),
   evidenceUrls: new Map(),
   evidenceRenderVersions: new Map(),
+  evidenceManifests: [],
   selectedSessionId: null,
   socket: null,
   realtimeRetry: null,
@@ -885,6 +886,13 @@ function renderSessionTimeline(events) {
   target.className = "timeline-list";
   events.forEach(function (event) {
     var row = makeNode("div", "timeline-event");
+    if (event.type === "VIOLATION" || event.type === "EVIDENCE") {
+      row.classList.add("linked");
+      row.title = "定位到对应 Evidence";
+      row.addEventListener("click", function () {
+        focusTimelineEvidence(event);
+      });
+    }
     var displayTime = event.timestamp || "";
     try {
       displayTime = new Date(event.timestamp).toLocaleTimeString();
@@ -924,6 +932,66 @@ function renderSessionTimeline(events) {
   });
 }
 
+function findEvidenceForTimelineEvent(event) {
+  var data = event.data || {};
+  if (data.evidence_id) {
+    return state.evidenceManifests.find(function (manifest) {
+      return manifest.evidence_id === data.evidence_id;
+    }) || null;
+  }
+  return state.evidenceManifests.find(function (manifest) {
+    var ruleMatches = !data.rule_id ||
+      manifest.rule_id === data.rule_id;
+    var eventMatches = !data.event_id ||
+      manifest.event_id === data.event_id;
+    return ruleMatches && eventMatches;
+  }) || null;
+}
+function evidenceCenterPercentage(manifest) {
+  var start = Number(manifest.normalized_start_ms || 0);
+  var end = Number(manifest.normalized_end_ms || start);
+  var scheduled = Number(
+    manifest.scheduled_timestamp_ms ||
+    manifest.requested_timestamp_ms ||
+    ((start + end) / 2)
+  );
+  if (end <= start) return 50;
+  var value = (scheduled - start) / (end - start) * 100;
+  return Math.max(0, Math.min(100, value));
+}
+function focusTimelineEvidence(event) {
+  var manifest = findEvidenceForTimelineEvent(event);
+  if (!manifest) {
+    showNotice("没有找到与该 Timeline 事件匹配的 Evidence.", true);
+    return;
+  }
+  var selector =
+    '.evidence-card[data-evidence-id="' +
+    CSS.escape(manifest.evidence_id) + '"]';
+  var card = document.querySelector(selector);
+  if (!card) return;
+
+  document.querySelectorAll(".evidence-card.focused").forEach(
+    function (item) { item.classList.remove("focused"); }
+  );
+  card.classList.add("focused");
+  card.scrollIntoView({
+    behavior: "smooth",
+    block: "center"
+  });
+
+  var slider = card.querySelector('input[type="range"]');
+  if (slider) {
+    slider.value = String(
+      Math.round(evidenceCenterPercentage(manifest))
+    );
+    slider.dispatchEvent(new Event("input"));
+  }
+  setTimeout(function () {
+    card.classList.remove("focused");
+  }, 2200);
+}
+
 async function loadSessionEvidence(sessionId) {
   revokeEvidenceUrls();
   var target = el("evidenceGrid");
@@ -937,7 +1005,8 @@ async function loadSessionEvidence(sessionId) {
     var manifests = await api(
       "/api/v1/sessions/" + encodeURIComponent(sessionId) + "/evidence"
     );
-    renderEvidence(manifests || []);
+    state.evidenceManifests = manifests || [];
+    renderEvidence(state.evidenceManifests);
   } catch (error) {
     target.className = "evidence-grid empty-state";
     target.textContent = "Evidence 加载失败: " + error.message;
@@ -954,6 +1023,7 @@ function renderEvidence(manifests) {
   target.className = "evidence-grid";
   manifests.forEach(function (manifest) {
     var card = makeNode("article", "evidence-card");
+    card.dataset.evidenceId = manifest.evidence_id;
     var head = makeNode("div", "evidence-head");
     var title = makeNode(
       "div",
@@ -1134,6 +1204,7 @@ function revokeEvidenceUrls() {
   });
   state.evidenceUrls.clear();
   state.evidenceRenderVersions.clear();
+  state.evidenceManifests = [];
 }
 async function recoverIncomplete(sessionId) {
   var reason = window.prompt(

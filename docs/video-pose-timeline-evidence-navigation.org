@@ -1,0 +1,57 @@
+#+TITLE: Video Pose Timeline Evidence Navigation
+#+SUBTITLE: Direct Navigation from Audit Events to Multi-view Evidence
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+Timeline and Evidence are most useful when they are connected.
+
+Console 0.57 lets a reviewer click an Audit Timeline =VIOLATION= or =EVIDENCE= event and jump directly to the related multi-view Evidence package.
+
+* 2. Matching
+
+For an =EVIDENCE= event, matching uses:
+
+#+BEGIN_SRC text
+evidence_id
+#+END_SRC
+
+For a =VIOLATION= event, matching uses:
+
+#+BEGIN_SRC text
+rule_id
+event_id
+#+END_SRC
+
+against the already loaded Evidence manifests.
+
+* 3. Navigation
+
+When a match exists, the Console:
+
+1. scrolls the Evidence card into the viewport.
+2. temporarily highlights the card.
+3. calculates the Evidence center percentage.
+4. moves the package timeline slider near the scheduled violation time.
+5. refreshes all camera views at that synchronized position.
+
+* 4. Time Selection
+
+The target percentage uses:
+
+#+BEGIN_SRC text
+scheduled_timestamp_ms
+normalized_start_ms
+normalized_end_ms
+#+END_SRC
+
+When a scheduled timestamp is not present, the normalized window midpoint is used.
+
+* 5. Security
+
+No additional backend endpoint is required.
+
+All Evidence images remain protected by the existing =evidence:read= API and Authorization header.
+
+The Timeline itself requires =session:read=.
