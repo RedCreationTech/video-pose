@@ -1,0 +1,61 @@
+#+TITLE: Video Pose Calibration Health Gate
+#+SUBTITLE: Independent Control Points and Perspective Reprojection RMSE
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. File existence is not enough
+
+A camera can be bumped after calibration. The YAML file still exists, but the geometry is no longer trustworthy.
+
+For production 3D workstations, Video Pose can now require an independent calibration-health check before Session start.
+
+* 2. Configuration
+
+#+BEGIN_SRC yaml
+calibration_health:
+  enabled: true
+  calibration: /etc/video-pose/perspective-calibration.yaml
+  control_points: /etc/video-pose/calibration-control-points.yaml
+  max_rmse: 5.0
+#+END_SRC
+
+The calibration path can be omitted when =triangulation.calibration= already points to the same perspective profile.
+
+* 3. Algorithm reuse
+
+The Gate reuses the existing:
+
+#+BEGIN_SRC text
+validate_calibration_health()
+#+END_SRC
+
+For every camera:
+
+1. Project independent 3D world control points through the 3x4 projection matrix.
+2. Compare projected image coordinates with measured control-point coordinates.
+3. Compute reprojection RMSE.
+4. Require at least one control point for every camera in the profile.
+5. Require RMSE <= configured max_rmse.
+
+* 4. Doctor and Session Gate
+
+When enabled:
+
+- =video-pose-doctor= fails if profile/control-point files are missing or RMSE fails.
+- Session Readiness contains a =calibration-health= check.
+- formal Session start returns 503 if the check fails.
+
+* 5. Audit
+
+Session runtime fingerprint also records SHA-256 for:
+
+- calibration-health profile.
+- calibration control points.
+
+This makes later compliance review reproducible even when a newer calibration has replaced the site files.
+
+* 6. Field practice
+
+Do not use the exact same points both to fit calibration and to claim health.
+
+Keep a physically distributed validation set that covers the actual work envelope, especially hand/tool zones close to image edges.

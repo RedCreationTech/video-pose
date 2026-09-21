@@ -38,6 +38,8 @@ class SessionAuditMetadata(BaseModel):
     zones_sha256: str | None = None
     planar_calibration_sha256: str | None = None
     perspective_calibration_sha256: str | None = None
+    calibration_health_profile_sha256: str | None = None
+    calibration_control_points_sha256: str | None = None
 
 
 class SessionAuditWriter:

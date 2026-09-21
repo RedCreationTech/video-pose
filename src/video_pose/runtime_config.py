@@ -94,6 +94,13 @@ def effective_capture_timestamp_source(
     return CaptureTimestampSource.ARRIVAL
 
 
+class CalibrationHealthRuntimeConfig(BaseModel):
+    enabled: bool = False
+    calibration: str | None = None
+    control_points: str | None = None
+    max_rmse: float = Field(default=5.0, gt=0.0)
+
+
 class SessionReadinessRuntimeConfig(BaseModel):
     enabled: bool = False
     require_all_cameras_online: bool = True
@@ -162,6 +169,9 @@ class OfflineAnalysisConfig(BaseModel):
     )
     readiness: SessionReadinessRuntimeConfig = Field(
         default_factory=SessionReadinessRuntimeConfig
+    )
+    calibration_health: CalibrationHealthRuntimeConfig = Field(
+        default_factory=CalibrationHealthRuntimeConfig
     )
     action_min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
 

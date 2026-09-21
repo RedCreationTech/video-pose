@@ -5,7 +5,12 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from .camera_model import (
+    load_control_points,
+    validate_calibration_health,
+)
 from .live_health import CameraState
+from .perspective import load_perspective_calibration
 from .runtime_config import LoadedAnalysisConfig
 from .storage_health import sample_runtime_storage
 
@@ -252,6 +257,63 @@ def evaluate_session_readiness(
                     f"errors_total={evidence.errors_total}",
                 )
 
+    calibration_health = config.config.calibration_health
+    if calibration_health.enabled:
+        calibration_value = (
+            calibration_health.calibration
+            or config.config.triangulation.calibration
+        )
+        if calibration_value is None:
+            _check(
+                checks,
+                "calibration-health",
+                False,
+                "perspective calibration is not configured",
+            )
+        elif calibration_health.control_points is None:
+            _check(
+                checks,
+                "calibration-health",
+                False,
+                "calibration control points are not configured",
+            )
+        else:
+            try:
+                profile = load_perspective_calibration(
+                    config.resolve(calibration_value)
+                )
+                controls = load_control_points(
+                    config.resolve(
+                        calibration_health.control_points
+                    )
+                )
+                report = validate_calibration_health(
+                    profile,
+                    controls,
+                    max_rmse=calibration_health.max_rmse,
+                )
+                detail = ", ".join(
+                    (
+                        f"{camera.camera_id}:"
+                        f"rmse={camera.rmse:.6f}:"
+                        f"{'PASS' if camera.passed else 'FAIL'}"
+                    )
+                    for camera in report.cameras
+                )
+                _check(
+                    checks,
+                    "calibration-health",
+                    report.passed,
+                    detail or "no camera health results",
+                )
+            except Exception as exc:
+                _check(
+                    checks,
+                    "calibration-health",
+                    False,
+                    str(exc),
+                )
+
     if policy.require_runtime_assets:
         cfg = config.config
         _asset_check(
@@ -293,6 +355,24 @@ def evaluate_session_readiness(
             ),
             required=cfg.triangulation.enabled,
         )
+        if cfg.calibration_health.enabled:
+            _asset_check(
+                config,
+                checks,
+                "asset:calibration-health-profile",
+                (
+                    cfg.calibration_health.calibration
+                    or cfg.triangulation.calibration
+                ),
+                required=True,
+            )
+            _asset_check(
+                config,
+                checks,
+                "asset:calibration-control-points",
+                cfg.calibration_health.control_points,
+                required=True,
+            )
 
     if policy.require_storage_headroom and audit_root is not None:
         storage = sample_runtime_storage(

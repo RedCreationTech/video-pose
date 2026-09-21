@@ -9,8 +9,13 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .camera_model import (
+    load_control_points,
+    validate_calibration_health,
+)
 from .gstreamer_capture import opencv_has_gstreamer
 from .native_gstreamer_capture import inspect_native_gstreamer
+from .perspective import load_perspective_calibration
 from .runtime_config import (
     CaptureBackend,
     LoadedAnalysisConfig,
@@ -166,6 +171,72 @@ def _gstreamer_check(config: LoadedAnalysisConfig) -> DoctorCheck | None:
     )
 
 
+def _calibration_health_check(
+    config: LoadedAnalysisConfig,
+) -> DoctorCheck | None:
+    health = config.config.calibration_health
+    if not health.enabled:
+        return None
+
+    calibration_value = (
+        health.calibration
+        or config.config.triangulation.calibration
+    )
+    if calibration_value is None:
+        return DoctorCheck(
+            name="calibration-health",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail="perspective calibration is not configured",
+        )
+    if health.control_points is None:
+        return DoctorCheck(
+            name="calibration-health",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail="calibration control points are not configured",
+        )
+
+    try:
+        profile = load_perspective_calibration(
+            config.resolve(calibration_value)
+        )
+        controls = load_control_points(
+            config.resolve(health.control_points)
+        )
+        report = validate_calibration_health(
+            profile,
+            controls,
+            max_rmse=health.max_rmse,
+        )
+    except Exception as exc:
+        return DoctorCheck(
+            name="calibration-health",
+            status=CheckStatus.FAIL,
+            required=True,
+            detail=str(exc),
+        )
+
+    detail = ", ".join(
+        (
+            f"{camera.camera_id}:"
+            f"rmse={camera.rmse:.6f}:"
+            f"{'PASS' if camera.passed else 'FAIL'}"
+        )
+        for camera in report.cameras
+    )
+    return DoctorCheck(
+        name="calibration-health",
+        status=(
+            CheckStatus.PASS
+            if report.passed
+            else CheckStatus.FAIL
+        ),
+        required=True,
+        detail=detail or "no camera health results",
+    )
+
+
 def build_doctor_report(
     config_path: str | Path,
     *,
@@ -238,6 +309,22 @@ def build_doctor_report(
         assets.append(
             ("perspective-calibration", cfg.triangulation.calibration)
         )
+    if cfg.calibration_health.enabled:
+        assets.extend(
+            [
+                (
+                    "calibration-health-profile",
+                    (
+                        cfg.calibration_health.calibration
+                        or cfg.triangulation.calibration
+                    ),
+                ),
+                (
+                    "calibration-control-points",
+                    cfg.calibration_health.control_points,
+                ),
+            ]
+        )
 
     for name, value in assets:
         if value is None:
@@ -252,6 +339,10 @@ def build_doctor_report(
                 )
             continue
         checks.append(_path_check(name, loaded.resolve(value)))
+
+    calibration_health = _calibration_health_check(loaded)
+    if calibration_health is not None:
+        checks.append(calibration_health)
 
     if include_cuda:
         checks.append(_cuda_check(loaded))

@@ -25,6 +25,8 @@ class RuntimeFingerprint(BaseModel):
     zones_sha256: str | None = None
     planar_calibration_sha256: str | None = None
     perspective_calibration_sha256: str | None = None
+    calibration_health_profile_sha256: str | None = None
+    calibration_control_points_sha256: str | None = None
 
 
 def sha256_file(path: str | Path) -> str | None:
@@ -55,6 +57,12 @@ def build_runtime_fingerprint(
     perspective = (
         cfg.triangulation.calibration
         if cfg.triangulation.enabled
+        else None
+    )
+    health_profile = (
+        cfg.calibration_health.calibration
+        or cfg.triangulation.calibration
+        if cfg.calibration_health.enabled
         else None
     )
     return RuntimeFingerprint(
@@ -90,5 +98,17 @@ def build_runtime_fingerprint(
         perspective_calibration_sha256=_hash_config_path(
             config,
             perspective,
+        ),
+        calibration_health_profile_sha256=_hash_config_path(
+            config,
+            health_profile,
+        ),
+        calibration_control_points_sha256=_hash_config_path(
+            config,
+            (
+                cfg.calibration_health.control_points
+                if cfg.calibration_health.enabled
+                else None
+            ),
         ),
     )

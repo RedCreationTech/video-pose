@@ -64,3 +64,11 @@ readiness:
   require_storage_headroom: true
   min_storage_free_ratio: 0.10
   min_storage_free_gb: 5
+
+
+# Enable after the site provides independent validation control points.
+calibration_health:
+  enabled: false
+  calibration: /etc/video-pose/perspective-calibration.yaml
+  control_points: /etc/video-pose/calibration-control-points.yaml
+  max_rmse: 5.0
