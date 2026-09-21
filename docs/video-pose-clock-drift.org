@@ -1,0 +1,64 @@
+#+TITLE: Video Pose Clock Drift Diagnostics
+#+SUBTITLE: Multi-view Offset Trend Estimation and Release Gate
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Fixed offset vs drift
+
+A fixed offset can be calibrated:
+
+#+BEGIN_SRC text
+LEFT = +8 ms
+RIGHT = -5 ms
+#+END_SRC
+
+A growing offset is different:
+
+#+BEGIN_SRC text
+LEFT:
+00:00  +8 ms
+00:30  +9.5 ms
+01:00  +11 ms
+
+drift = +3 ms/min
+#+END_SRC
+
+The latter indicates clocks, transport buffers or timestamp sources are diverging.
+
+* 2. Estimator
+
+For each camera, Video Pose stores up to 2048 recent:
+
+#+BEGIN_SRC text
+(reference_timestamp_ms, camera_offset_ms)
+#+END_SRC
+
+It performs ordinary least squares and reports slope as:
+
+#+BEGIN_SRC text
+ms offset / minute
+#+END_SRC
+
+A minimum 30-second observation window is required. Before that, drift is reported as 0 to avoid startup noise amplification.
+
+* 3. Prometheus
+
+#+BEGIN_SRC text
+video_pose_sync_camera_drift_ms_per_minute{camera="cam-left"}
+#+END_SRC
+
+* 4. Soak Gate
+
+Default:
+
+#+BEGIN_SRC text
+max absolute camera drift <= 2.0 ms/min
+#+END_SRC
+
+This gate is independent of absolute offset and skew.
+
+* 5. Timestamp source note
+
+With the current OpenCV/GStreamer capture path, this primarily detects arrival/decode timing drift.
+
+The next production step is native GStreamer appsink PTS/RTP timestamp extraction, which turns the same metric into true source-clock drift diagnostics without changing the health API.

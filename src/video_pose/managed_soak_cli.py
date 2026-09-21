@@ -79,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
     )
+    parser.add_argument(
+        "--max-abs-sync-drift-ms-per-minute",
+        type=float,
+        default=2.0,
+    )
 
     parser.add_argument(
         "--max-session-start-errors",
@@ -126,6 +131,9 @@ def _health_thresholds(args: argparse.Namespace) -> SoakThresholds:
         max_sync_miss_ratio=args.max_sync_miss_ratio,
         max_sync_p99_skew_ms=args.max_sync_p99_skew_ms,
         min_sync_emitted_total=args.min_sync_emitted_total,
+        max_abs_sync_drift_ms_per_minute=(
+            args.max_abs_sync_drift_ms_per_minute
+        ),
     )
 
 

@@ -62,6 +62,9 @@ class SyncHealthSnapshot(BaseModel):
     skew_p95_ms: float = 0.0
     skew_p99_ms: float = 0.0
     camera_offsets_ms: dict[str, float] = Field(default_factory=dict)
+    camera_drift_ms_per_minute: dict[str, float] = Field(
+        default_factory=dict
+    )
 
 
 class EvidenceHealthSnapshot(BaseModel):
@@ -114,6 +117,10 @@ class _SyncHealth:
         default_factory=lambda: deque(maxlen=4096)
     )
     camera_offsets_ms: dict[str, float] = field(default_factory=dict)
+    offset_samples: dict[
+        str,
+        deque[tuple[float, float]],
+    ] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -218,6 +225,7 @@ class LiveHealthRegistry:
     def sync_emitted(
         self,
         *,
+        reference_timestamp_ms: float,
         skew_ms: float,
         camera_offsets_ms: dict[str, float],
     ) -> None:
@@ -230,6 +238,14 @@ class LiveHealthRegistry:
             sync.max_skew_ms = max(sync.max_skew_ms, skew_ms)
             sync.skews_ms.append(skew_ms)
             sync.camera_offsets_ms = dict(camera_offsets_ms)
+            for camera_id, offset_ms in camera_offsets_ms.items():
+                samples = sync.offset_samples.setdefault(
+                    camera_id,
+                    deque(maxlen=2048),
+                )
+                samples.append(
+                    (reference_timestamp_ms, offset_ms)
+                )
 
     def frame_set_received(self) -> None:
         with self._lock:
@@ -301,6 +317,13 @@ class LiveHealthRegistry:
                     camera_offsets_ms=dict(
                         self._sync.camera_offsets_ms
                     ),
+                    camera_drift_ms_per_minute={
+                        camera_id: self._drift_ms_per_minute(
+                            list(samples)
+                        )
+                        for camera_id, samples
+                        in self._sync.offset_samples.items()
+                    },
                 )
             runtime = RuntimeHealthSnapshot(
                 frame_sets_received_total=self._runtime.frame_sets_received_total,
@@ -334,6 +357,35 @@ class LiveHealthRegistry:
         if camera_id not in self._cameras:
             raise KeyError(f"unknown health camera: {camera_id}")
         return self._cameras[camera_id]
+
+    @staticmethod
+    def _drift_ms_per_minute(
+        samples: list[tuple[float, float]],
+    ) -> float:
+        if len(samples) < 2:
+            return 0.0
+        first_time = samples[0][0]
+        last_time = samples[-1][0]
+        if last_time - first_time < 30_000.0:
+            return 0.0
+
+        xs = [
+            (timestamp_ms - first_time) / 60_000.0
+            for timestamp_ms, _offset_ms in samples
+        ]
+        ys = [offset_ms for _timestamp_ms, offset_ms in samples]
+        mean_x = sum(xs) / len(xs)
+        mean_y = sum(ys) / len(ys)
+        denominator = sum(
+            (value - mean_x) ** 2 for value in xs
+        )
+        if denominator <= 0:
+            return 0.0
+        numerator = sum(
+            (x_value - mean_x) * (y_value - mean_y)
+            for x_value, y_value in zip(xs, ys, strict=True)
+        )
+        return numerator / denominator
 
     @staticmethod
     def _percentile(values: list[float], percentile: float) -> float:

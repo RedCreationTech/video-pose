@@ -191,6 +191,7 @@ class LiveFrameSynchronizer:
         skew_ms = max(values) - min(values)
         if self.health is not None:
             self.health.sync_emitted(
+                reference_timestamp_ms=target,
                 skew_ms=skew_ms,
                 camera_offsets_ms={
                     packet.camera_id: (

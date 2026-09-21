@@ -116,6 +116,16 @@ def render_prometheus(snapshot: LiveHealthSnapshot) -> str:
                     {"camera": camera_id},
                 )
             )
+        for camera_id, drift in sorted(
+            sync.camera_drift_ms_per_minute.items()
+        ):
+            lines.append(
+                _metric(
+                    "video_pose_sync_camera_drift_ms_per_minute",
+                    drift,
+                    {"camera": camera_id},
+                )
+            )
 
     evidence = snapshot.evidence
     if evidence is not None:

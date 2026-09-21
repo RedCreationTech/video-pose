@@ -28,6 +28,10 @@ class SoakThresholds(BaseModel):
     )
     max_sync_p99_skew_ms: float = Field(default=20.0, ge=0.0)
     min_sync_emitted_total: int = Field(default=1, ge=0)
+    max_abs_sync_drift_ms_per_minute: float = Field(
+        default=2.0,
+        ge=0.0,
+    )
 
 
 class SoakSample(BaseModel):
@@ -58,6 +62,7 @@ class SoakReport(BaseModel):
     sync_miss_ratio: float | None
     sync_p99_skew_ms: float | None
     sync_emitted_total: int | None
+    max_abs_sync_drift_ms_per_minute: float | None
     passed: bool
     failures: list[str]
 
@@ -139,6 +144,7 @@ class SoakMonitor:
         sync_miss_ratio = None
         sync_p99_skew_ms = None
         sync_emitted_total = None
+        max_abs_sync_drift = None
         if sync is not None:
             attempts = sync.reference_frames_total
             sync_miss_ratio = (
@@ -146,6 +152,13 @@ class SoakMonitor:
             )
             sync_p99_skew_ms = sync.skew_p99_ms
             sync_emitted_total = sync.emitted_total
+            max_abs_sync_drift = max(
+                (
+                    abs(value)
+                    for value in sync.camera_drift_ms_per_minute.values()
+                ),
+                default=0.0,
+            )
 
         evidence = latest.evidence
         evidence_drop_ratio = (
@@ -226,6 +239,17 @@ class SoakMonitor:
                     f"sync_emitted_total={sync.emitted_total} "
                     f"< {thresholds.min_sync_emitted_total}"
                 )
+            if (
+                max_abs_sync_drift is not None
+                and max_abs_sync_drift
+                > thresholds.max_abs_sync_drift_ms_per_minute
+            ):
+                failures.append(
+                    "max_abs_sync_drift_ms_per_minute="
+                    f"{max_abs_sync_drift:.6f} "
+                    "> "
+                    f"{thresholds.max_abs_sync_drift_ms_per_minute:.6f}"
+                )
 
         if evidence is not None:
             if (
@@ -274,6 +298,7 @@ class SoakMonitor:
             sync_miss_ratio=sync_miss_ratio,
             sync_p99_skew_ms=sync_p99_skew_ms,
             sync_emitted_total=sync_emitted_total,
+            max_abs_sync_drift_ms_per_minute=max_abs_sync_drift,
             passed=not failures,
             failures=failures,
         )
