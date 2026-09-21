@@ -1,0 +1,87 @@
+#+TITLE: Video Pose Immutable Session Timeline
+#+SUBTITLE: Reconstruct Operational History Directly from Session Audit
+#+AUTHOR: RedCreationTech
+#+DATE: 2026-09-21
+
+* 1. Goal
+
+A post-incident timeline should not depend on browser memory or the current SQL query store.
+
+Video Pose 0.56 reconstructs a Session Timeline directly from the immutable Audit directory.
+
+* 2. Sources
+
+The timeline reads:
+
+#+BEGIN_SRC text
+metadata.json
+updates.jsonl
+reviews.jsonl
+recovery.json optional
+final.json optional
+#+END_SRC
+
+It never mutates these source files.
+
+* 3. Event Types
+
+Current event types:
+
+- SESSION_STARTED.
+- ACTION.
+- STEP.
+- VIOLATION.
+- EVIDENCE.
+- REVIEW.
+- RECOVERY.
+- SESSION_FINISHED.
+
+Each event contains a stable id, timestamp, type, concise title/detail and a minimized structured payload.
+
+* 4. Data Minimization
+
+The API does not return raw Audit documents wholesale.
+
+For Actions it returns business identity, object/zone and confidence.
+
+For Violations it returns rule/step/type/severity/event identity.
+
+For Reviews it returns decision, reviewer and optional reason/comment.
+
+Runtime config paths, model paths and other metadata not needed for the timeline are not copied into events.
+
+* 5. API
+
+#+BEGIN_SRC text
+GET /api/v1/sessions/{session_id}/timeline
+#+END_SRC
+
+Permission:
+
+#+BEGIN_SRC text
+session:read
+#+END_SRC
+
+The endpoint works for completed, aborted and currently running Sessions as long as metadata.json exists.
+
+* 6. Console
+
+Selecting a historical Session loads in parallel:
+
+- SQL Session detail.
+- Evidence Explorer.
+- Immutable Session Timeline.
+
+This keeps incident review consistent even after SQL has been rebuilt from Audit.
+
+* 7. Example
+
+#+BEGIN_SRC text
+14:00:01 SESSION_STARTED
+14:00:05 ACTION PICK
+14:00:05 STEP S010 -> SATISFIED
+14:00:12 VIOLATION SYSTEM-QUALITY-CAMERA-LEFT
+14:00:12 EVIDENCE scheduled
+14:03:40 REVIEW CONFIRMED
+14:05:00 SESSION_FINISHED
+#+END_SRC

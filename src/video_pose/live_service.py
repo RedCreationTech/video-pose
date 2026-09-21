@@ -308,6 +308,25 @@ def create_managed_live_app(
             raise HTTPException(status_code=404, detail="session not found")
         return payload
 
+    @app.get("/api/v1/sessions/{session_id}/timeline")
+    def session_timeline(
+        session_id: str,
+        _principal: Any = Depends(require(Permission.SESSION_READ)),
+    ) -> Any:
+        method = getattr(controller, "session_timeline", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail="session timeline is unavailable",
+            )
+        try:
+            return method(session_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=str(exc),
+            ) from exc
+
     @app.get("/api/v1/runtime/persistence")
     def persistence_health(
         _principal: Any = Depends(require(Permission.PERSISTENCE_READ)),

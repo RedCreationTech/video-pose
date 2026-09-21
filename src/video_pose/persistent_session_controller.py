@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .audit_timeline import build_session_timeline
 from .contracts import Severity, Violation
 from .incomplete_recovery import (
     IncompleteRecoveryRequest,
@@ -480,6 +481,14 @@ class PersistentLiveSessionController:
             "configured": True,
             "status": "READY",
         }
+
+    def session_timeline(
+        self,
+        session_id: str,
+    ) -> dict[str, Any]:
+        return build_session_timeline(
+            self.audit.root / session_id
+        ).model_dump(mode="json")
 
     def list_sessions(
         self,
